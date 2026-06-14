@@ -907,7 +907,7 @@
           <button id="addTrade" class="primary">＋ 新增交易</button>
           <button id="exportCsv">⇩ 导出CSV</button>
           <button id="openSettings">⚙ 设置</button>
-          <button id="resetSample">重置样例</button>
+          <button id="resetSample">清空数据</button>
         </div>
       </div>
 
@@ -1246,15 +1246,16 @@
     const MANUAL_KEY = "trading-review-strategies-v1";
     const SETTINGS_KEY = "trading-review-settings-v1";
     const LEGACY_IMAGE_STORAGE_KEY = "trading-review-images-v1";
+    const DATA_VERSION_KEY = "trading-review-data-version";
+    const CURRENT_DATA_VERSION = "empty-start-v1";
     localStorage.removeItem(LEGACY_IMAGE_STORAGE_KEY);
 
-    const sampleTrades = [
-      {date:"2026-06-18",entryTime:"09:35",exitTime:"10:05",session:"美盘",dayPart:"早盘",symbol:"NQ",side:"Long",strategy:"Opening Drive",entry:22000,initialStop:21980,exit:22050,qty:2,grade:5,ruleBroken:false,notes:"大周期关键位上方回踩不破，按计划执行"},
-      {date:"2026-06-18",entryTime:"10:42",exitTime:"11:06",session:"美盘",dayPart:"午盘",symbol:"MNQ",side:"Short",strategy:"Failed Break",entry:22040,initialStop:22062,exit:22070,qty:3,grade:2,ruleBroken:true,ruleViolation:"追单",emotionCause:"FOMO",notes:"突破失败后追空太晚"},
-      {date:"2026-06-19",entryTime:"08:20",exitTime:"09:02",session:"欧盘",dayPart:"早盘",symbol:"ES",side:"Long",strategy:"VWAP Rejection",entry:6020,initialStop:6014,exit:6032,qty:1,grade:4,ruleBroken:false,notes:"VWAP 上方回踩后收回"},
-      {date:"2026-06-19",entryTime:"13:18",exitTime:"13:55",session:"美盘",dayPart:"午盘",symbol:"NQ",side:"Short",strategy:"Range Edge",entry:22120,initialStop:22152,exit:22082,qty:1,grade:3,ruleBroken:false,notes:"价值区上沿反应，动能衰减后出场"},
-      {date:"2026-06-20",entryTime:"09:31",exitTime:"09:44",session:"美盘",dayPart:"早盘",symbol:"NQ",side:"Long",strategy:"Opening Drive",entry:22210,initialStop:22182,exit:22178,qty:2,grade:1,ruleBroken:true,ruleViolation:"抢跑",emotionCause:"过度自信",notes:"没有等 5m 确认，开盘直接抢跑"}
-    ].map((t, i) => ({id: "S" + (i + 1), ...t}));
+    if (localStorage.getItem(DATA_VERSION_KEY) !== CURRENT_DATA_VERSION) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
+    }
+
+    const sampleTrades = [];
 
     const sampleManual = [
       {id:"M1",name:"Opening Drive",market:"NQ / ES",status:"Active",reflection:"开盘后先判断大周期关键位和前一日结构，不能只看第一分钟冲动。高质量机会通常来自首个方向扩张后的回踩不破，并且订单流没有明显反向吸收。",keywords:"开盘, 大周期, 回踩, 订单流, 延续",entry:"首个方向扩张后回踩不破，入场只做延续。",exit:"第一目标减仓，剩余按结构移动止损。",invalid:"开盘区间被反向收回，或第二根 5m 无延续。"},
@@ -2512,7 +2513,7 @@
     document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
     ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
     $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
-    $("resetSample").addEventListener("click", () => { trades = structuredClone(sampleTrades); manuals = structuredClone(sampleManual); selectedManualId = manuals[0].id; saveAll(); render(); });
+    $("resetSample").addEventListener("click", () => { trades = []; saveAll(); render(); });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
     $("calcTrade").addEventListener("click", () => computeTradeFields(true));
     ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("input", () => computeTradeFields(false)));
