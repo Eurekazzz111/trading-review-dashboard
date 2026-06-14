@@ -1,0 +1,2564 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>交易复盘工作台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f2ed;
+      --panel: #fbfaf7;
+      --panel-2: #f0eee8;
+      --ink: #1e2523;
+      --muted: #6d746f;
+      --line: #d8d3c8;
+      --green: #148a5b;
+      --green-soft: #dceee6;
+      --red: #bd3b3b;
+      --red-soft: #f3dddd;
+      --gold: #a36d0b;
+      --blue: #246b8f;
+      --violet: #704a8f;
+      --shadow: 0 14px 36px rgba(42, 35, 25, .09);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      min-width: 1120px;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 7px;
+      height: 34px;
+      padding: 0 11px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--ink);
+      color: white;
+      border-color: var(--ink);
+    }
+
+    button.icon {
+      width: 34px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    button:hover { border-color: #b8b0a2; }
+    input, select, textarea {
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--ink);
+      border-radius: 7px;
+      min-height: 34px;
+      padding: 6px 9px;
+      outline: none;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 270px 1fr;
+    }
+
+    .side {
+      background: #e8e3d8;
+      border-right: 1px solid #d2cabe;
+      padding: 18px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, #17211e 0 50%, #148a5b 50%),
+        #17211e;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .brand span {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .nav {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+
+    .nav button {
+      width: 100%;
+      justify-content: flex-start;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: transparent;
+      border-color: transparent;
+      height: 38px;
+      text-align: left;
+    }
+
+    .nav button.active {
+      background: rgba(255,255,255,.72);
+      border-color: #d4ccbd;
+      box-shadow: inset 3px 0 0 var(--green);
+    }
+
+    .filters {
+      display: grid;
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid #d3cbbd;
+    }
+
+    .filters label, .field label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #4b514d;
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .filters select, .filters input {
+      width: 100%;
+    }
+
+    .content {
+      padding: 18px 22px 30px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .title h2 {
+      font-size: 22px;
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .title p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .file-btn {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .file-btn input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(115px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .metric, .panel, .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric {
+      padding: 11px 12px;
+      min-height: 82px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .metric-main { min-width: 0; }
+
+    .metric .label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .metric .value {
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: 0;
+      white-space: normal;
+      line-height: 1.08;
+      overflow-wrap: anywhere;
+    }
+
+    .metric .sub {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric-visual {
+      width: 62px;
+      height: 48px;
+      display: grid;
+      place-items: center;
+    }
+
+    .ring {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: conic-gradient(#43bf91 calc(var(--pct) * 1%), #f15d68 0);
+      position: relative;
+    }
+
+    .ring::after {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      background: white;
+      border: 1px solid #eeeaf5;
+    }
+
+    .mini-bars {
+      width: 62px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .mini-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #eeeaf5;
+      overflow: hidden;
+    }
+
+    .mini-bar span {
+      display: block;
+      height: 100%;
+      width: calc(var(--pct) * 1%);
+      background: #43bf91;
+    }
+
+    .mini-bar.loss span { background: #f15d68; }
+
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--gold); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.35fr .95fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .panel {
+      padding: 14px;
+      min-height: 120px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel h3 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+
+    .panel .meta {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    canvas {
+      width: 100%;
+      height: 260px;
+      display: block;
+    }
+
+    .half canvas { height: 220px; }
+
+    .tables {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 800;
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      background: #f5f3ee;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    td {
+      padding: 8px;
+      border-bottom: 1px solid #ece7dd;
+      vertical-align: top;
+    }
+
+    tr:hover td { background: #f8f5ef; }
+
+    .table-wrap {
+      overflow: hidden;
+      min-height: 180px;
+    }
+
+    .table-scroll {
+      max-height: 390px;
+      overflow: auto;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 11px;
+      background: var(--panel-2);
+      color: #404641;
+      white-space: nowrap;
+    }
+
+    .pill.green { background: var(--green-soft); color: var(--green); }
+    .pill.red { background: var(--red-soft); color: var(--red); }
+    .pill.blue { background: #dfeaf0; color: var(--blue); }
+    .pill.violet { background: #ebe3f0; color: var(--violet); }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .field.wide { grid-column: span 2; }
+    .field.full { grid-column: 1 / -1; }
+    .field input, .field select, .field textarea { width: 100%; }
+
+    .manual-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(460px, 1fr) 360px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .strategy-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .strategy-item {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      cursor: pointer;
+    }
+
+    .strategy-item.active {
+      border-color: var(--green);
+      box-shadow: inset 3px 0 0 var(--green);
+    }
+
+    .strategy-item h4 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .strategy-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .ai-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .ai-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      padding: 11px;
+    }
+
+    .ai-card h4 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .ai-card p {
+      margin: 0;
+      color: #4d534f;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .reflection-box {
+      min-height: 260px;
+      line-height: 1.6;
+    }
+
+    .keyword-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .keyword-cloud .pill {
+      border-radius: 7px;
+      min-height: 25px;
+      font-size: 12px;
+    }
+
+    .strategy-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 9px;
+    }
+
+    .strategy-metric {
+      border: 1px solid #eceaf1;
+      border-radius: 8px;
+      background: white;
+      padding: 10px;
+      min-height: 78px;
+    }
+
+    .strategy-metric b {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .strategy-metric span {
+      display: block;
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+
+    .strategy-note {
+      border-left: 3px solid #6b4bd8;
+      padding-left: 10px;
+      color: #4d534f;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .score-layout {
+      display: grid;
+      grid-template-columns: minmax(360px, .9fr) 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .score-canvas {
+      width: 100%;
+      height: 340px;
+    }
+
+    .score-summary {
+      display: grid;
+      gap: 12px;
+    }
+
+    .score-number {
+      font-size: 44px;
+      font-weight: 900;
+      color: #252a35;
+    }
+
+    .score-bar {
+      height: 12px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #e97878, #f3d95b, #9be564, #43bf91);
+      position: relative;
+    }
+
+    .score-bar::after {
+      content: "";
+      position: absolute;
+      left: calc(var(--score) * 1%);
+      top: 50%;
+      width: 18px;
+      height: 18px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: #43bf91;
+      border: 3px solid white;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .toolbar-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .small-note {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 20px;
+      text-align: center;
+    }
+
+    .app::before {
+      content: "";
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 52px;
+      background: #170729;
+      z-index: 0;
+      box-shadow: 0 1px 0 rgba(255,255,255,.08);
+    }
+
+    .app { background: #f6f6f8; }
+    .side {
+      background: #ffffff;
+      margin-top: 52px;
+      height: calc(100vh - 52px);
+      border-right: 1px solid #ebe8f2;
+      box-shadow: none;
+    }
+    .brand {
+      position: fixed;
+      top: 0;
+      left: 14px;
+      height: 52px;
+      margin: 0;
+      color: white;
+      z-index: 3;
+    }
+    .brand span { color: #bdb1d3; }
+    .mark {
+      background: linear-gradient(135deg, #6c4fd3, #3dd1b1);
+      border-radius: 10px;
+    }
+    .content {
+      margin-top: 52px;
+      background: #f7f7f9;
+    }
+    .topbar {
+      background: #f7f7f9;
+      padding-top: 2px;
+    }
+    .nav button.active {
+      background: #eee8fb;
+      color: #6847c7;
+      box-shadow: inset 3px 0 0 #6847c7;
+    }
+    button.primary {
+      background: #6748c5;
+      border-color: #6748c5;
+    }
+    .metric, .panel, .table-wrap {
+      border-color: #eceaf1;
+      box-shadow: 0 10px 28px rgba(33, 22, 57, .06);
+    }
+    .metric {
+      background: #fff;
+      border-radius: 10px;
+    }
+    .metric .label { color: #767282; }
+    .metric .value { color: #2d2940; }
+    .metric .value.positive { color: #43bf91; }
+    .metric .value.negative { color: #f15d68; }
+    .positive { color: #24aa78; }
+    .negative { color: #e6535e; }
+    .pill.green { background: #daf7eb; color: #15915f; }
+    .pill.red { background: #ffe0e3; color: #c93d49; }
+    .pill.blue { background: #e8ecff; color: #526fd6; }
+    .pill.violet { background: #eee8fb; color: #6847c7; }
+
+    .dashboard-main {
+      display: grid;
+      grid-template-columns: minmax(430px, .95fr) minmax(560px, 1.55fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .calendar-wrap {
+      min-height: 590px;
+    }
+
+    .calendar-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .calendar-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(78px, 1fr));
+      gap: 4px;
+    }
+
+    .dow {
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #eeeaf5;
+      border-radius: 7px;
+      color: #4d485c;
+      font-size: 12px;
+      font-weight: 800;
+      background: white;
+    }
+
+    .day-cell {
+      min-height: 92px;
+      border-radius: 7px;
+      border: 1px solid #eeeaf5;
+      background: #f0f0f1;
+      padding: 7px;
+      position: relative;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .day-cell.active {
+      border-color: #6b7cff;
+      box-shadow: inset 0 0 0 1px #6b7cff;
+    }
+
+    .day-cell.win { background: #dbf4e8; border-color: #8be0bb; }
+    .day-cell.loss { background: #ffe0e3; border-color: #ff9fa8; }
+    .day-cell.flat { background: #e7ebff; border-color: #9eb0ff; }
+    .day-cell.empty-day { opacity: .55; cursor: default; }
+
+    .day-num {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      font-size: 12px;
+      color: #676276;
+    }
+
+    .day-pnl {
+      margin-top: 25px;
+      font-weight: 900;
+      font-size: 17px;
+      text-align: right;
+      color: #2f2a40;
+    }
+
+    .day-meta {
+      text-align: right;
+      color: #6f697b;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .day-dot {
+      position: absolute;
+      right: 8px;
+      bottom: 7px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #f05d68;
+    }
+
+    .insight-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .settings-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(23, 7, 41, .42);
+      z-index: 9;
+    }
+
+    .settings-modal.open { display: grid; }
+    .settings-card {
+      width: min(560px, 92vw);
+      background: white;
+      border-radius: 10px;
+      border: 1px solid #e6e1f0;
+      box-shadow: 0 24px 70px rgba(23, 7, 41, .25);
+      padding: 18px;
+    }
+
+    .settings-row {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .mini-stat {
+      border: 1px solid #eceaf1;
+      background: white;
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .mini-stat b {
+      display: block;
+      font-size: 12px;
+      color: #777287;
+      margin-bottom: 8px;
+    }
+
+    .mini-stat span {
+      font-weight: 900;
+      font-size: 20px;
+    }
+
+    @media (max-width: 1200px) {
+      body { min-width: 980px; }
+      .kpis { grid-template-columns: repeat(3, 1fr); }
+      .grid { grid-template-columns: 1fr; }
+      .dashboard-main { grid-template-columns: 1fr; }
+      .manual-layout { grid-template-columns: 1fr; }
+      .analysis-grid, .score-layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <div class="mark">T</div>
+        <div>
+          <h1>交易复盘工作台</h1>
+          <span>Journal · Stats · Review</span>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="active" data-view="dashboard">▣ 总览</button>
+        <button data-view="trades">≡ 交易日志</button>
+        <button data-view="daily">◫ 每日/每周</button>
+        <button data-view="strategies">◇ 策略手册</button>
+        <button data-view="analysis">◎ 核心分析</button>
+        <button data-view="review">✦ AI复盘</button>
+      </nav>
+
+      <section class="filters">
+        <div>
+          <label for="fromDate">开始日期</label>
+          <input id="fromDate" type="date">
+        </div>
+        <div>
+          <label for="toDate">结束日期</label>
+          <input id="toDate" type="date">
+        </div>
+        <div>
+          <label for="symbolFilter">品种</label>
+          <select id="symbolFilter"></select>
+        </div>
+        <div>
+          <label for="sessionFilter">时段</label>
+          <select id="sessionFilter"></select>
+        </div>
+        <div>
+          <label for="dayPartFilter">交易段</label>
+          <select id="dayPartFilter"></select>
+        </div>
+        <div>
+          <label for="strategyFilter">策略</label>
+          <select id="strategyFilter"></select>
+        </div>
+        <button id="clearFilters">清除筛选</button>
+      </section>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="title">
+          <h2 id="pageTitle">总览</h2>
+          <p id="pageSub">交易表现、策略质量和执行偏差</p>
+        </div>
+        <div class="actions">
+          <label class="file-btn">
+            <span>⇧ 导入CSV</span>
+            <input id="csvInput" type="file" accept=".csv,text/csv">
+          </label>
+          <button id="addTrade" class="primary">＋ 新增交易</button>
+          <button id="exportCsv">⇩ 导出CSV</button>
+          <button id="openSettings">⚙ 设置</button>
+          <button id="resetSample">重置样例</button>
+        </div>
+      </div>
+
+      <section class="kpis" id="kpis"></section>
+
+      <section id="dashboard" class="view active">
+        <div class="dashboard-main">
+          <div class="stack">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>累计盈亏曲线</h3>
+                <span class="meta" id="equityMeta"></span>
+              </div>
+              <canvas id="equityChart" width="900" height="320"></canvas>
+            </section>
+            <section class="panel half">
+              <div class="panel-head">
+                <h3>Daily & cumulative net P&L</h3>
+                <span class="meta">Bars + equity</span>
+              </div>
+              <canvas id="dailyBarChart" width="900" height="260"></canvas>
+            </section>
+          </div>
+          <div class="stack">
+            <section class="panel calendar-wrap">
+              <div class="calendar-top">
+                <div class="calendar-title">
+                  <button class="icon" id="prevMonth">‹</button>
+                  <span id="calendarTitle">Calendar</span>
+                  <button class="icon" id="nextMonth">›</button>
+                </div>
+                <div class="toolbar-row">
+                  <button id="thisMonth">This month</button>
+                  <span class="meta" id="monthlyStats"></span>
+                </div>
+              </div>
+              <div class="calendar-grid" id="calendarGrid"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="insight-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>纪律执行对照</h3>
+              <span class="meta">守规则 vs 破规则</span>
+            </div>
+            <div class="table-wrap">
+              <div class="table-scroll">
+                <table id="disciplineStats"></table>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>持仓时间对比</h3>
+              <span class="meta">盈利单 vs 亏损单</span>
+            </div>
+            <div id="holdStats" class="ai-list"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>当日 AI 复盘</h3>
+              <span class="meta" id="selectedDayLabel"></span>
+            </div>
+            <div id="dailyAiReview" class="ai-list"></div>
+          </section>
+        </div>
+
+        <div class="grid" style="margin-top:14px;">
+          <div class="stack">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>策略统计</h3>
+                <span class="meta">Win rate / PF</span>
+              </div>
+              <div class="table-wrap">
+                <div class="table-scroll">
+                  <table id="strategyStats"></table>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="stack">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>交易段统计</h3>
+                <span class="meta">早盘 / 午盘 / 尾盘</span>
+              </div>
+              <div class="table-wrap">
+                <div class="table-scroll">
+                  <table id="dayPartStats"></table>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="trades" class="view">
+        <section class="panel">
+          <div class="panel-head">
+            <h3>新增 / 编辑交易</h3>
+            <div class="toolbar-row">
+              <button id="calcTrade">自动计算</button>
+              <button id="saveTrade" class="primary">保存</button>
+              <button id="clearTradeForm">清空</button>
+            </div>
+          </div>
+          <div class="form-grid" id="tradeForm">
+            <input type="hidden" id="tradeId">
+            <div class="field"><label>日期</label><input id="date" type="date"></div>
+            <div class="field"><label>入场时间</label><input id="entryTime" type="time"></div>
+            <div class="field"><label>出场时间</label><input id="exitTime" type="time"></div>
+            <div class="field"><label>时段</label><select id="session"><option>美盘</option><option>欧盘</option><option>亚盘</option></select></div>
+            <div class="field"><label>交易段</label><select id="dayPart"><option>早盘</option><option>午盘</option><option>尾盘</option></select></div>
+            <div class="field"><label>品种</label><input id="symbol" placeholder="NQ / ES / MNQ"></div>
+            <div class="field"><label>方向</label><select id="side"><option>Long</option><option>Short</option></select></div>
+            <div class="field"><label>策略</label><input id="strategy" placeholder="Opening Drive"></div>
+            <div class="field"><label>入场价</label><input id="entry" type="number" step="0.01"></div>
+            <div class="field"><label>Initial Stop</label><input id="initialStop" type="number" step="0.01"></div>
+            <div class="field"><label>出场价</label><input id="exit" type="number" step="0.01"></div>
+            <div class="field"><label>数量</label><input id="qty" type="number" step="1"></div>
+            <div class="field"><label>点数</label><input id="points" type="number" step="0.01"></div>
+            <div class="field"><label>盈亏</label><input id="pnl" type="number" step="0.01"></div>
+            <div class="field"><label>Risk/Reward</label><input id="riskReward" type="number" step="0.01"></div>
+            <div class="field"><label>持仓分钟</label><input id="holdingMinutes" type="number" step="1"></div>
+            <div class="field"><label>执行评分</label><input id="grade" type="number" min="1" max="5" step="1"></div>
+            <div class="field"><label>规则执行</label><select id="ruleBroken"><option value="false">守规则</option><option value="true">破规则</option></select></div>
+            <div class="field"><label>违规标签</label><select id="ruleViolation"><option></option><option>抢跑</option><option>追单</option><option>逆势</option><option>未等确认</option><option>超风险</option><option>提前离场</option></select></div>
+            <div class="field"><label>情绪原因</label><select id="emotionCause"><option></option><option>FOMO</option><option>复仇交易</option><option>害怕亏损</option><option>过度自信</option><option>犹豫</option><option>疲劳</option></select></div>
+            <div class="field full"><label>备注</label><textarea id="notes"></textarea></div>
+          </div>
+        </section>
+        <section class="panel" style="margin-top:14px;">
+          <div class="panel-head">
+            <h3>交易明细</h3>
+            <span class="meta" id="tradeCount"></span>
+          </div>
+          <div class="table-wrap">
+            <div class="table-scroll">
+              <table id="tradeTable"></table>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="daily" class="view">
+        <div class="split">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>每日总记录</h3>
+              <span class="meta">Daily journal</span>
+            </div>
+            <div class="table-wrap">
+              <div class="table-scroll">
+                <table id="dailyTable"></table>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>周统计</h3>
+              <span class="meta">Weekly stats</span>
+            </div>
+            <div class="table-wrap">
+              <div class="table-scroll">
+                <table id="weeklyTable"></table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="strategies" class="view">
+        <div class="manual-layout">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>策略列表</h3>
+              <button id="newStrategy">＋</button>
+            </div>
+            <div class="strategy-list" id="strategyList"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>策略长文</h3>
+              <div class="toolbar-row">
+                <button id="extractKeywords">提炼关键词</button>
+                <button id="saveStrategy" class="primary">保存策略</button>
+              </div>
+            </div>
+            <div class="form-grid">
+              <input type="hidden" id="manualId">
+              <div class="field wide"><label>策略名称</label><input id="manualName"></div>
+              <div class="field"><label>市场</label><input id="manualMarket" placeholder="NQ / ES"></div>
+              <div class="field"><label>状态</label><select id="manualStatus"><option>Active</option><option>Watch</option><option>Paused</option></select></div>
+              <div class="field full"><label>策略反思长文</label><textarea id="manualReflection" class="reflection-box" placeholder="这里写完整逻辑、观察、复盘感悟、失败案例、待验证想法。可以写很长，不需要压缩。"></textarea></div>
+              <div class="field full"><label>关键词</label><input id="manualKeywords" placeholder="点击提炼关键词，或手动输入：大周期, 5分钟, LVP, 吸收"></div>
+              <div class="field full"><label>入场规则</label><textarea id="manualEntry"></textarea></div>
+              <div class="field full"><label>出场规则</label><textarea id="manualExit"></textarea></div>
+              <div class="field full"><label>失效条件</label><textarea id="manualInvalid"></textarea></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>关键词复习</h3>
+              <span class="meta">Keywords</span>
+            </div>
+            <div class="stack">
+              <div>
+                <div class="small-note" style="margin-bottom:8px;">从长文中提炼出的复习关键词</div>
+                <div class="keyword-cloud" id="strategyKeywordCloud"></div>
+              </div>
+              <div class="strategy-note" id="strategyCoreNote"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="analysis" class="view">
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>核心分析</h3>
+              <span class="meta">当前筛选下的全部交易</span>
+            </div>
+            <div id="overallKeywordCloud" class="keyword-cloud" style="margin-bottom:12px;"></div>
+            <div class="strategy-note" id="overallCoreNote"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Zella score</h3>
+              <span class="meta">Win · PF · Drawdown · Consistency</span>
+            </div>
+            <div class="score-layout">
+              <canvas id="scoreChart" class="score-canvas" width="620" height="380"></canvas>
+              <div class="score-summary">
+                <div>
+                  <div class="small-note">Your Score</div>
+                  <div class="score-number" id="scoreNumber">-</div>
+                </div>
+                <div class="score-bar" id="scoreBar" style="--score:0"></div>
+                <div class="strategy-metrics" id="scoreBreakdown"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>核心风险指标</h3>
+              <span class="meta">Risk Metrics</span>
+            </div>
+            <div class="strategy-metrics" id="analysisRiskMetrics"></div>
+          </section>
+
+          <div class="analysis-grid">
+            <section class="panel">
+              <div class="panel-head"><h3>按时段统计</h3><span class="meta">By session</span></div>
+              <div class="table-wrap"><div class="table-scroll"><table id="analysisSessionStats"></table></div></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h3>按方向统计</h3><span class="meta">By direction</span></div>
+              <div class="table-wrap"><div class="table-scroll"><table id="analysisDirectionStats"></table></div></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h3>纪律执行对照</h3><span class="meta">守 vs 破</span></div>
+              <div class="table-wrap"><div class="table-scroll"><table id="analysisDisciplineStats"></table></div></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h3>按时段(开/午/收)统计</h3><span class="meta">By hour block</span></div>
+              <div class="table-wrap"><div class="table-scroll"><table id="analysisHourStats"></table></div></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h3>按策略统计</h3><span class="meta">By strategy</span></div>
+              <div class="table-wrap"><div class="table-scroll"><table id="analysisStrategyStats"></table></div></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="review" class="view">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>AI复盘</h3>
+              <div class="toolbar-row">
+                <button id="runReview" class="primary">生成复盘</button>
+              </div>
+            </div>
+            <div class="ai-list" id="aiReview"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>可加入的下一步</h3>
+              <span class="meta">Roadmap</span>
+            </div>
+            <div class="ai-list" id="roadmap"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="settings-modal" id="settingsModal">
+    <div class="settings-card">
+      <div class="panel-head">
+        <h3>⚙ 设置</h3>
+        <button class="icon" id="closeSettings">×</button>
+      </div>
+      <p class="small-note">每点美元在这里维护；交易录入时不用填写。点数 = 价格变动，不乘合约数；美元 = 点数 × 每点美元 × 合约数。</p>
+      <div class="settings-row">
+        <label>NQ 每点美元</label>
+        <input id="settingNQ" type="number" step="0.01">
+      </div>
+      <div class="settings-row">
+        <label>MNQ 每点美元</label>
+        <input id="settingMNQ" type="number" step="0.01">
+      </div>
+      <div class="settings-row">
+        <label>ES 每点美元</label>
+        <input id="settingES" type="number" step="0.01">
+      </div>
+      <div class="settings-row">
+        <label>MES 每点美元</label>
+        <input id="settingMES" type="number" step="0.01">
+      </div>
+      <div class="toolbar-row" style="margin-top:16px; justify-content:flex-end;">
+        <button id="saveSettings" class="primary">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "trading-review-v1";
+    const MANUAL_KEY = "trading-review-strategies-v1";
+    const SETTINGS_KEY = "trading-review-settings-v1";
+    const LEGACY_IMAGE_STORAGE_KEY = "trading-review-images-v1";
+    localStorage.removeItem(LEGACY_IMAGE_STORAGE_KEY);
+
+    const sampleTrades = [
+      {date:"2026-06-18",entryTime:"09:35",exitTime:"10:05",session:"美盘",dayPart:"早盘",symbol:"NQ",side:"Long",strategy:"Opening Drive",entry:22000,initialStop:21980,exit:22050,qty:2,grade:5,ruleBroken:false,notes:"大周期关键位上方回踩不破，按计划执行"},
+      {date:"2026-06-18",entryTime:"10:42",exitTime:"11:06",session:"美盘",dayPart:"午盘",symbol:"MNQ",side:"Short",strategy:"Failed Break",entry:22040,initialStop:22062,exit:22070,qty:3,grade:2,ruleBroken:true,ruleViolation:"追单",emotionCause:"FOMO",notes:"突破失败后追空太晚"},
+      {date:"2026-06-19",entryTime:"08:20",exitTime:"09:02",session:"欧盘",dayPart:"早盘",symbol:"ES",side:"Long",strategy:"VWAP Rejection",entry:6020,initialStop:6014,exit:6032,qty:1,grade:4,ruleBroken:false,notes:"VWAP 上方回踩后收回"},
+      {date:"2026-06-19",entryTime:"13:18",exitTime:"13:55",session:"美盘",dayPart:"午盘",symbol:"NQ",side:"Short",strategy:"Range Edge",entry:22120,initialStop:22152,exit:22082,qty:1,grade:3,ruleBroken:false,notes:"价值区上沿反应，动能衰减后出场"},
+      {date:"2026-06-20",entryTime:"09:31",exitTime:"09:44",session:"美盘",dayPart:"早盘",symbol:"NQ",side:"Long",strategy:"Opening Drive",entry:22210,initialStop:22182,exit:22178,qty:2,grade:1,ruleBroken:true,ruleViolation:"抢跑",emotionCause:"过度自信",notes:"没有等 5m 确认，开盘直接抢跑"}
+    ].map((t, i) => ({id: "S" + (i + 1), ...t}));
+
+    const sampleManual = [
+      {id:"M1",name:"Opening Drive",market:"NQ / ES",status:"Active",reflection:"开盘后先判断大周期关键位和前一日结构，不能只看第一分钟冲动。高质量机会通常来自首个方向扩张后的回踩不破，并且订单流没有明显反向吸收。",keywords:"开盘, 大周期, 回踩, 订单流, 延续",entry:"首个方向扩张后回踩不破，入场只做延续。",exit:"第一目标减仓，剩余按结构移动止损。",invalid:"开盘区间被反向收回，或第二根 5m 无延续。"},
+      {id:"M2",name:"Failed Break",market:"NQ / ES",status:"Active",reflection:"突破失败不是立刻反手，重点是看价格是否重新接受回区间，失败方向是否被套，回踩有没有继续被吸收。",keywords:"突破失败, 回区间, 套单, 回踩, 吸收",entry:"突破失败并重新回到区间内，等待失败方向确认。",exit:"回到区间中轴或对侧流动性先减仓。",invalid:"突破方向重新站稳，失败结构消失。"},
+      {id:"M3",name:"VWAP Rejection",market:"ES / NQ",status:"Watch",reflection:"VWAP 拒绝需要配合位置，单独碰到 VWAP 不是交易理由。要看测试后的接受失败、主动攻击和风险位置。",keywords:"VWAP, 位置, 拒绝, 主动攻击, 风险",entry:"价格测试 VWAP 后被拒绝，配合低风险止损。",exit:"到前低/前高或动能衰减出场。",invalid:"VWAP 被有效站上/跌破并接受。"}
+    ];
+
+    let trades = loadTrades();
+    let manuals = loadManuals();
+    let settings = loadSettings();
+    let activeView = "dashboard";
+    let selectedManualId = manuals[0]?.id || "";
+    let calendarCursor = new Date();
+    let selectedDay = "";
+    let manualDayPartTouched = false;
+
+    const $ = (id) => document.getElementById(id);
+
+    function loadTrades() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return structuredClone(sampleTrades);
+      try { return JSON.parse(raw); } catch { return structuredClone(sampleTrades); }
+    }
+
+    function loadManuals() {
+      const raw = localStorage.getItem(MANUAL_KEY);
+      if (!raw) return structuredClone(sampleManual);
+      try { return JSON.parse(raw); } catch { return structuredClone(sampleManual); }
+    }
+
+    function loadSettings() {
+      const defaults = {NQ:20, MNQ:2, ES:50, MES:5};
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return defaults;
+      try { return {...defaults, ...JSON.parse(raw)}; } catch { return defaults; }
+    }
+
+    function saveAll() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
+      localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    function hasValue(v) {
+      return v !== undefined && v !== null && String(v).trim() !== "";
+    }
+
+    function toNum(v) {
+      if (!hasValue(v)) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function money(n) {
+      const v = Number(n || 0);
+      const s = v < 0 ? "-" : "";
+      return s + "$" + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+    }
+
+    function num(n, d = 2) {
+      const v = toNum(n);
+      if (v === null) return "-";
+      return v.toFixed(d);
+    }
+
+    function pct(n) {
+      if (!Number.isFinite(Number(n))) return "-";
+      return (Number(n) * 100).toFixed(1) + "%";
+    }
+
+    function pnlClass(n) { return Number(n) > 0 ? "positive" : Number(n) < 0 ? "negative" : "neutral"; }
+
+    function unique(values) {
+      return [...new Set(values.filter(Boolean))].sort((a,b) => String(a).localeCompare(String(b), "zh-Hans-CN"));
+    }
+
+    function pointValueForSymbol(symbol) {
+      const s = String(symbol || "").toUpperCase();
+      if (s.includes("MNQ")) return Number(settings.MNQ || 2);
+      if (s.includes("MES")) return Number(settings.MES || 5);
+      if (s.includes("NQ")) return Number(settings.NQ || 20);
+      if (s.includes("ES")) return Number(settings.ES || 50);
+      return 1;
+    }
+
+    function minutesBetween(date, start, end) {
+      if (!date || !start || !end) return 0;
+      const a = new Date(`${date}T${start}:00`);
+      let b = new Date(`${date}T${end}:00`);
+      if (!Number.isFinite(a.getTime()) || !Number.isFinite(b.getTime())) return 0;
+      if (b < a) b = new Date(b.getTime() + 86400000);
+      return Math.max(0, Math.round((b - a) / 60000));
+    }
+
+    function inferDayPart(time, session) {
+      const h = Number(String(time || "").split(":")[0]);
+      const m = Number(String(time || "").split(":")[1] || 0);
+      if (!Number.isFinite(h)) return "早盘";
+      const mins = h * 60 + m;
+      if (session === "美盘") {
+        if (mins < 630) return "早盘";
+        if (mins < 780) return "午盘";
+        return "尾盘";
+      }
+      if (session === "亚盘") return mins < 720 ? "早盘" : "午盘";
+      return mins < 540 ? "早盘" : "午盘";
+    }
+
+    function normalizeDayPart(value, time, session) {
+      const v = String(value || "").trim();
+      if (["早盘", "午盘", "尾盘"].includes(v)) return v;
+      return inferDayPart(time, session);
+    }
+
+    function derivedTrade(raw) {
+      const t = {...raw};
+      t.pointValue = toNum(t.pointValue) ?? pointValueForSymbol(t.symbol);
+      const dir = t.side === "Short" ? -1 : 1;
+      const entry = toNum(t.entry);
+      const exit = toNum(t.exit);
+      const initialStop = toNum(t.initialStop ?? t.stop);
+      const qty = toNum(t.qty) ?? 0;
+      const existingPoints = toNum(t.points);
+      t.points = entry !== null && exit !== null ? (existingPoints ?? (exit - entry) * dir) : (existingPoints ?? 0);
+      t.initialStop = initialStop ?? "";
+      const riskPoints = entry !== null && initialStop !== null ? Math.abs(entry - initialStop) : 0;
+      const existingRiskReward = toNum(t.riskReward ?? t.rMultiple ?? t.r);
+      t.riskReward = riskPoints > 0 && toNum(t.points) !== null ? t.points / riskPoints : (existingRiskReward ?? "");
+      const existingPnl = toNum(t.pnl);
+      if (existingPnl !== null) {
+        t.pnl = existingPnl;
+      } else if (toNum(t.points) !== null && t.pointValue && qty) {
+        t.pnl = t.points * t.pointValue * qty;
+      } else {
+        t.pnl = 0;
+      }
+      t.holdingMinutes = toNum(t.holdingMinutes) ?? minutesBetween(t.date, t.entryTime, t.exitTime);
+      t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
+      t.ruleBroken = t.ruleBroken === true || t.ruleBroken === "true" || t.ruleBroken === 1 || t.ruleBroken === "1" || (!("ruleBroken" in raw) && Number(t.grade || 0) > 0 && Number(t.grade || 0) <= 2);
+      t.ruleViolation = t.ruleViolation || (t.ruleBroken ? inferRuleViolation(t.notes) : "");
+      t.emotionCause = t.emotionCause || "";
+      return t;
+    }
+
+    function inferRuleViolation(notes) {
+      const text = String(notes || "").toLowerCase();
+      if (text.includes("chase") || text.includes("late")) return "追单";
+      if (text.includes("counter") || text.includes("fade")) return "逆势";
+      if (text.includes("confirmation") || text.includes("confirm")) return "未等确认";
+      if (text.includes("early")) return "提前离场";
+      return "";
+    }
+
+    function filteredTrades() {
+      const from = $("fromDate").value;
+      const to = $("toDate").value;
+      const sym = $("symbolFilter").value;
+      const ses = $("sessionFilter").value;
+      const part = $("dayPartFilter").value;
+      const strat = $("strategyFilter").value;
+      return trades.map(derivedTrade).filter(t => {
+        if (from && t.date < from) return false;
+        if (to && t.date > to) return false;
+        if (sym && t.symbol !== sym) return false;
+        if (ses && t.session !== ses) return false;
+        if (part && t.dayPart !== part) return false;
+        if (strat && t.strategy !== strat) return false;
+        return true;
+      }).sort((a,b) => (a.date + a.entryTime).localeCompare(b.date + b.entryTime));
+    }
+
+    function calcStats(list) {
+      list = list.map(derivedTrade);
+      const wins = list.filter(t => Number(t.pnl) > 0);
+      const losses = list.filter(t => Number(t.pnl) < 0);
+      const grossWin = wins.reduce((s,t) => s + Number(t.pnl), 0);
+      const grossLossAbs = Math.abs(losses.reduce((s,t) => s + Number(t.pnl), 0));
+      const total = list.reduce((s,t) => s + Number(t.pnl || 0), 0);
+      const totalPoints = list.reduce((s,t) => s + Number(t.points || 0), 0);
+      const avgWin = wins.length ? grossWin / wins.length : 0;
+      const avgLoss = losses.length ? grossLossAbs / losses.length : 0;
+      const riskRewards = list.map(t => toNum(t.riskReward)).filter(v => v !== null);
+      return {
+        trades: list.length,
+        total,
+        totalPoints,
+        wins: wins.length,
+        losses: losses.length,
+        winRate: list.length ? wins.length / list.length : 0,
+        profitFactor: grossLossAbs ? grossWin / grossLossAbs : grossWin > 0 ? Infinity : 0,
+        expectancy: list.length ? total / list.length : 0,
+        expectancyPoints: list.length ? totalPoints / list.length : 0,
+        avgWin,
+        avgLoss,
+        payoff: avgLoss ? avgWin / avgLoss : avgWin ? Infinity : 0,
+        grossWin,
+        grossLossAbs,
+        avgR: riskRewards.length ? riskRewards.reduce((s,t) => s + t, 0) / riskRewards.length : "",
+        avgPoints: list.length ? totalPoints / list.length : 0,
+        avgHold: list.length ? list.reduce((s,t) => s + Number(t.holdingMinutes || 0), 0) / list.length : 0,
+        avgGrade: list.length ? list.reduce((s,t) => s + Number(t.grade || 0), 0) / list.length : 0,
+        maxDrawdown: maxDrawdown(list)
+      };
+    }
+
+    function maxDrawdown(list) {
+      let equity = 0, peak = 0, dd = 0;
+      list.forEach(t => {
+        equity += Number(t.pnl || 0);
+        peak = Math.max(peak, equity);
+        dd = Math.min(dd, equity - peak);
+      });
+      return dd;
+    }
+
+    function calcStreaks(list) {
+      let win = 0, loss = 0, maxWin = 0, maxLoss = 0, currentType = "", currentCount = 0;
+      list.map(derivedTrade).sort((a,b) => (a.date + a.entryTime).localeCompare(b.date + b.entryTime)).forEach(t => {
+        const pnl = Number(t.pnl || 0);
+        const type = pnl > 0 ? "win" : pnl < 0 ? "loss" : "flat";
+        if (type === "win") { win += 1; loss = 0; maxWin = Math.max(maxWin, win); }
+        else if (type === "loss") { loss += 1; win = 0; maxLoss = Math.max(maxLoss, loss); }
+        else { win = 0; loss = 0; }
+        if (type === currentType) currentCount += 1;
+        else { currentType = type; currentCount = type === "flat" ? 0 : 1; }
+      });
+      return {maxWin, maxLoss, currentType, currentCount};
+    }
+
+    function groupBy(list, keyFn) {
+      return list.reduce((acc, item) => {
+        const key = keyFn(item) || "-";
+        (acc[key] ||= []).push(item);
+        return acc;
+      }, {});
+    }
+
+    function aggregateBy(list, keyFn) {
+      return Object.entries(groupBy(list, keyFn)).map(([key, rows]) => ({key, rows, stats: calcStats(rows)}))
+        .sort((a,b) => b.stats.total - a.stats.total);
+    }
+
+    function dayRows(list) {
+      return aggregateBy(list, t => t.date).sort((a,b) => a.key.localeCompare(b.key)).map(d => {
+        const best = aggregateBy(d.rows, t => t.strategy)[0]?.key || "-";
+        const sessions = unique(d.rows.map(t => t.session)).join(" / ");
+        return {...d, best, sessions};
+      });
+    }
+
+    function weekOf(dateStr) {
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDay() || 7;
+      d.setDate(d.getDate() + 4 - day);
+      const yearStart = new Date(d.getFullYear(),0,1);
+      const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return d.getFullYear() + "-W" + String(week).padStart(2, "0");
+    }
+
+    function renderFilters() {
+      const lists = {
+        symbolFilter: unique(trades.map(t => t.symbol)),
+        sessionFilter: unique(trades.map(t => t.session)),
+        dayPartFilter: unique(["早盘","午盘","尾盘", ...trades.map(t => derivedTrade(t).dayPart)]),
+        strategyFilter: unique(trades.map(t => t.strategy))
+      };
+      Object.entries(lists).forEach(([id, values]) => {
+        const current = $(id).value;
+        $(id).innerHTML = '<option value="">全部</option>' + values.map(v => `<option>${escapeHtml(v)}</option>`).join("");
+        $(id).value = values.includes(current) ? current : "";
+      });
+    }
+
+    function renderKpis(list) {
+      const s = calcStats(list);
+      const pf = s.profitFactor === Infinity ? "∞" : num(s.profitFactor);
+      const items = [
+        ["总盈亏", money(s.total), `${s.trades} 笔交易`, pnlClass(s.total), "bar", clamp01((s.total + Math.abs(s.maxDrawdown || 0)) / Math.max(1, s.grossWin)) * 100],
+        ["净点数", `${num(s.totalPoints, 1)} pts`, `平均 ${num(s.avgPoints, 2)} pts`, pnlClass(s.totalPoints), "bar", clamp01((s.avgPoints + 25) / 50) * 100],
+        ["Profit Factor", pf, `${money(s.grossWin)} / ${money(-s.grossLossAbs)}`, s.profitFactor >= 1.5 ? "positive" : s.profitFactor < 1 ? "negative" : "neutral", "ring", clamp01((Number.isFinite(s.profitFactor) ? s.profitFactor : 3) / 3) * 100],
+        ["Win Rate", pct(s.winRate), `${s.wins}W / ${s.losses}L`, s.winRate >= .5 ? "positive" : "neutral", "ring", s.winRate * 100],
+        ["数学期望", money(s.expectancy), "每笔平均", pnlClass(s.expectancy), "bar", clamp01((s.expectancy + Math.max(1, s.avgWin)) / Math.max(1, s.avgWin * 2)) * 100],
+        ["Avg Win / Avg Loss", `${money(s.avgWin)} / ${money(-s.avgLoss)}`, `盈亏比 ${s.payoff === Infinity ? "∞" : num(s.payoff)}`, s.payoff >= 1.5 ? "positive" : "neutral", "bars", clamp01(s.payoff / 3) * 100],
+        ["Max Drawdown", money(s.maxDrawdown), `平均持仓 ${num(s.avgHold,0)}m`, s.maxDrawdown < 0 ? "negative" : "neutral", "ring", scoreDrawdown(s)]
+      ];
+      $("kpis").innerHTML = items.map(([label, value, sub, cls, visual, pctValue]) => `
+        <div class="metric">
+          <div class="metric-main">
+            <div class="label">${label}</div>
+            <div class="value ${cls}">${value}</div>
+            <div class="sub">${sub}</div>
+          </div>
+          <div class="metric-visual">${renderMiniVisual(visual, pctValue)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderMiniVisual(type, pctValue) {
+      const p = Math.max(0, Math.min(100, Number(pctValue || 0)));
+      if (type === "ring") return `<div class="ring" style="--pct:${p}"></div>`;
+      if (type === "bars") return `<div class="mini-bars"><div class="mini-bar"><span style="--pct:${p}"></span></div><div class="mini-bar loss"><span style="--pct:${Math.max(4, 100 - p)}"></span></div></div>`;
+      return `<div class="mini-bars"><div class="mini-bar"><span style="--pct:${p}"></span></div></div>`;
+    }
+
+    function clamp01(n) {
+      return Math.max(0, Math.min(1, Number(n || 0)));
+    }
+
+    function renderTables(list) {
+      renderAggTable("strategyStats", aggregateBy(list, t => t.strategy), "策略");
+      renderAggTable("dayPartStats", aggregateBy(list, t => t.dayPart), "交易段");
+      renderTradeTable(list);
+      renderDailyWeekly(list);
+      renderDisciplineStats(list);
+      renderHoldStats(list);
+      renderCalendar(list);
+      renderDailyAiReview(list);
+    }
+
+    function renderAggTable(id, rows, title) {
+      const head = `<thead><tr><th>${title}</th><th>交易</th><th>净盈亏</th><th>点数</th><th>Win</th><th>PF</th><th>期望</th></tr></thead>`;
+      const body = rows.length ? rows.map(r => {
+        const s = r.stats;
+        return `<tr>
+          <td><span class="pill blue">${escapeHtml(r.key)}</span></td>
+          <td>${s.trades}</td>
+          <td class="${pnlClass(s.total)}">${money(s.total)}</td>
+          <td class="${pnlClass(s.totalPoints)}">${num(s.totalPoints, 1)}</td>
+          <td>${pct(s.winRate)}</td>
+          <td>${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td>
+          <td class="${pnlClass(s.expectancy)}">${money(s.expectancy)}</td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="7" class="empty">无记录</td></tr>`;
+      $(id).innerHTML = head + `<tbody>${body}</tbody>`;
+    }
+
+    function renderTradeTable(list) {
+      $("tradeCount").textContent = list.length + " 笔";
+      const head = `<thead><tr>
+        <th>日期</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th>
+        <th>入场</th><th>Initial Stop</th><th>出场</th><th>点数</th><th>盈亏</th><th>Risk/Reward</th><th>持仓</th><th>纪律</th><th>违规/情绪</th><th></th>
+      </tr></thead>`;
+      const body = list.length ? list.map(t => `<tr>
+        <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
+        <td><span class="pill violet">${escapeHtml(t.session)}</span></td>
+        <td><span class="pill blue">${escapeHtml(t.dayPart)}</span></td>
+        <td>${escapeHtml(t.symbol)}</td>
+        <td><span class="pill ${t.side === "Long" ? "green" : "red"}">${escapeHtml(t.side)}</span></td>
+        <td>${escapeHtml(t.strategy)}</td>
+        <td>${num(t.entry, 2)}</td>
+        <td>${num(t.initialStop, 2)}</td>
+        <td>${num(t.exit, 2)}</td>
+        <td class="${pnlClass(t.points)}">${num(t.points, 1)}</td>
+        <td class="${pnlClass(t.pnl)}">${money(t.pnl)}</td>
+        <td class="${pnlClass(t.riskReward)}">${num(t.riskReward)}</td>
+        <td>${num(t.holdingMinutes, 0)}m</td>
+        <td><span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span></td>
+        <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
+        <td><button class="icon" data-edit="${t.id}">✎</button></td>
+      </tr>`).join("") : `<tr><td colspan="16" class="empty">无记录</td></tr>`;
+      $("tradeTable").innerHTML = head + `<tbody>${body}</tbody>`;
+      document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => editTrade(btn.dataset.edit)));
+    }
+
+    function renderDailyWeekly(list) {
+      const daily = dayRows(list);
+      $("dailyTable").innerHTML = `<thead><tr><th>日期</th><th>总盈亏</th><th>点数</th><th>交易</th><th>Win</th><th>PF</th><th>时段</th><th>主策略</th></tr></thead><tbody>` +
+        (daily.length ? daily.map(d => `<tr>
+          <td>${d.key}</td><td class="${pnlClass(d.stats.total)}">${money(d.stats.total)}</td><td class="${pnlClass(d.stats.totalPoints)}">${num(d.stats.totalPoints,1)}</td><td>${d.stats.trades}</td>
+          <td>${pct(d.stats.winRate)}</td><td>${d.stats.profitFactor === Infinity ? "∞" : num(d.stats.profitFactor)}</td>
+          <td>${escapeHtml(d.sessions)}</td><td>${escapeHtml(d.best)}</td>
+        </tr>`).join("") : `<tr><td colspan="8" class="empty">无记录</td></tr>`) + `</tbody>`;
+
+      const weekly = aggregateBy(list, t => weekOf(t.date)).sort((a,b) => a.key.localeCompare(b.key));
+      $("weeklyTable").innerHTML = `<thead><tr><th>周</th><th>总盈亏</th><th>点数</th><th>交易</th><th>Win</th><th>PF</th><th>期望</th><th>Max DD</th></tr></thead><tbody>` +
+        (weekly.length ? weekly.map(w => `<tr>
+          <td>${w.key}</td><td class="${pnlClass(w.stats.total)}">${money(w.stats.total)}</td><td class="${pnlClass(w.stats.totalPoints)}">${num(w.stats.totalPoints,1)}</td><td>${w.stats.trades}</td>
+          <td>${pct(w.stats.winRate)}</td><td>${w.stats.profitFactor === Infinity ? "∞" : num(w.stats.profitFactor)}</td>
+          <td class="${pnlClass(w.stats.expectancy)}">${money(w.stats.expectancy)}</td><td class="negative">${money(w.stats.maxDrawdown)}</td>
+        </tr>`).join("") : `<tr><td colspan="8" class="empty">无记录</td></tr>`) + `</tbody>`;
+    }
+
+    function drawCharts(list) {
+      drawEquityCurve(list);
+      drawDailyBars(dayRows(list));
+    }
+
+    function renderDisciplineStats(list) {
+      const rows = [
+        {key:"守规则", rows:list.filter(t => !derivedTrade(t).ruleBroken)},
+        {key:"破规则", rows:list.filter(t => derivedTrade(t).ruleBroken)}
+      ];
+      $("disciplineStats").innerHTML = `<thead><tr><th>执行</th><th>交易</th><th>净盈亏</th><th>Win</th><th>PF</th><th>期望</th><th>平均R</th></tr></thead><tbody>` +
+        rows.map(r => {
+          const s = calcStats(r.rows);
+          return `<tr>
+            <td><span class="pill ${r.key === "守规则" ? "green" : "red"}">${r.key}</span></td>
+            <td>${s.trades}</td>
+            <td class="${pnlClass(s.total)}">${money(s.total)}</td>
+            <td>${pct(s.winRate)}</td>
+            <td>${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td>
+            <td class="${pnlClass(s.expectancy)}">${money(s.expectancy)}</td>
+            <td>${num(s.avgR)}</td>
+          </tr>`;
+        }).join("") + `</tbody>`;
+    }
+
+    function renderHoldStats(list) {
+      const wins = list.filter(t => Number(t.pnl) > 0);
+      const losses = list.filter(t => Number(t.pnl) < 0);
+      const winStats = calcStats(wins);
+      const lossStats = calcStats(losses);
+      const streak = calcStreaks(list);
+      const ratio = winStats.avgHold ? lossStats.avgHold / winStats.avgHold : 0;
+      $("holdStats").innerHTML = `
+        <div class="mini-stat"><b>盈利单平均持仓</b><span>${num(winStats.avgHold, 0)}m</span></div>
+        <div class="mini-stat"><b>亏损单平均持仓</b><span class="${ratio > 1.25 ? "negative" : "neutral"}">${num(lossStats.avgHold, 0)}m</span></div>
+        <div class="mini-stat"><b>亏损/盈利持仓比</b><span class="${ratio > 1.25 ? "negative" : "positive"}">${num(ratio || 0, 2)}x</span></div>
+        <div class="mini-stat"><b>连胜 / 连负</b><span>${streak.maxWin} / ${streak.maxLoss}</span></div>
+      `;
+    }
+
+    function renderCalendar(list) {
+      if (!list.length) {
+        $("calendarGrid").innerHTML = `<div class="empty" style="grid-column:1/-1;">暂无记录</div>`;
+        $("calendarTitle").textContent = "Calendar";
+        $("monthlyStats").textContent = "";
+        return;
+      }
+      if (!selectedDay || !list.some(t => t.date === selectedDay)) {
+        selectedDay = list.at(-1).date;
+        calendarCursor = new Date(selectedDay + "T00:00:00");
+      }
+      const year = calendarCursor.getFullYear();
+      const month = calendarCursor.getMonth();
+      $("calendarTitle").textContent = calendarCursor.toLocaleString("en-US", {month:"long", year:"numeric"});
+      const first = new Date(year, month, 1);
+      const start = new Date(first);
+      start.setDate(first.getDate() - first.getDay());
+      const dailyMap = Object.fromEntries(dayRows(list).map(d => [d.key, d]));
+      const monthRows = Object.values(dailyMap).filter(d => {
+        const dt = new Date(d.key + "T00:00:00");
+        return dt.getFullYear() === year && dt.getMonth() === month;
+      });
+      const monthStats = calcStats(monthRows.flatMap(d => d.rows));
+      $("monthlyStats").innerHTML = `Monthly stats: <span class="${pnlClass(monthStats.total)}">${money(monthStats.total)}</span> · ${monthStats.trades} trades · PF ${monthStats.profitFactor === Infinity ? "∞" : num(monthStats.profitFactor)}`;
+      const dows = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => `<div class="dow">${d}</div>`).join("");
+      const cells = [];
+      for (let i=0; i<42; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        const key = localDateKey(d);
+        const row = dailyMap[key];
+        const inMonth = d.getMonth() === month;
+        const cls = !inMonth ? "empty-day" : row ? row.stats.total > 0 ? "win" : row.stats.total < 0 ? "loss" : "flat" : "";
+        const active = selectedDay === key ? "active" : "";
+        cells.push(`<button class="day-cell ${cls} ${active}" data-day="${key}" ${inMonth ? "" : "disabled"}>
+          <span class="day-num">${d.getDate()}</span>
+          ${row ? `<div class="day-pnl ${pnlClass(row.stats.total)}">${money(row.stats.total)}</div><div class="day-meta">${row.stats.trades} trades</div><span class="day-dot"></span>` : ""}
+        </button>`);
+      }
+      $("calendarGrid").innerHTML = dows + cells.join("");
+      document.querySelectorAll("[data-day]").forEach(btn => btn.addEventListener("click", () => {
+        selectedDay = btn.dataset.day;
+        renderCalendar(filteredTrades());
+        renderDailyAiReview(filteredTrades());
+      }));
+    }
+
+    function renderDailyAiReview(list) {
+      const rows = list.filter(t => t.date === selectedDay);
+      const s = calcStats(rows);
+      $("selectedDayLabel").textContent = selectedDay || "";
+      if (!rows.length) {
+        $("dailyAiReview").innerHTML = `<div class="ai-card"><h4>当日无交易</h4><p>点击月历中有交易的日期查看当日复盘。</p></div>`;
+        return;
+      }
+      const broken = rows.filter(t => derivedTrade(t).ruleBroken);
+      const emotions = unique(rows.map(t => t.emotionCause)).filter(Boolean);
+      const worst = rows.slice().sort((a,b) => Number(a.pnl) - Number(b.pnl))[0];
+      const points = [
+        `当日 ${rows.length} 笔，净盈亏 ${money(s.total)}，点数 ${num(s.totalPoints, 1)} pts，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}。`,
+        broken.length ? `有 ${broken.length} 笔破规则，主要标签：${unique(broken.map(t => t.ruleViolation)).filter(Boolean).join(" / ") || "未标注"}。` : "当天没有标记破规则交易。",
+        emotions.length ? `情绪原因：${emotions.join(" / ")}。` : "未记录情绪原因。",
+        worst ? `最大亏损来自 ${worst.strategy || "-"}，持仓 ${num(worst.holdingMinutes,0)}m。` : ""
+      ];
+      $("dailyAiReview").innerHTML = `<div class="ai-card"><h4>${selectedDay} 复盘</h4><p>${points.filter(Boolean).join(" ")}</p></div>` +
+        rows.map(t => `<div class="ai-card"><h4>${escapeHtml(t.entryTime)} ${escapeHtml(t.symbol)} ${escapeHtml(t.side)}</h4><p>${escapeHtml(t.strategy)} · <span class="${pnlClass(t.pnl)}">${money(t.pnl)}</span> · ${num(t.points,1)} pts · ${num(t.holdingMinutes,0)}m${derivedTrade(t).ruleBroken ? ` · 破规则: ${escapeHtml(derivedTrade(t).ruleViolation || "未标注")}` : ""}${t.emotionCause ? ` · 情绪: ${escapeHtml(t.emotionCause)}` : ""}</p></div>`).join("");
+    }
+
+    function hourBlock(t) {
+      const h = Number(String(t.entryTime || "").split(":")[0]);
+      if (!Number.isFinite(h)) return "未知";
+      if (h < 10) return "开盘前(<10)";
+      if (h < 12) return "早盘(10-12)";
+      if (h < 14) return "午盘(12-14)";
+      return "尾盘(≥14)";
+    }
+
+    function scoreDrawdown(s) {
+      const dd = Math.abs(Number(s.maxDrawdown || 0));
+      if (!dd) return 100;
+      const base = Math.max(1, s.grossWin || Math.abs(s.total) || dd);
+      return clamp01(1 - dd / base) * 100;
+    }
+
+    function scoreConsistency(list) {
+      const days = dayRows(list);
+      if (!days.length) return 0;
+      const positiveDays = days.filter(d => d.stats.total > 0).length / days.length;
+      const streak = calcStreaks(list);
+      const penalty = Math.min(.35, streak.maxLoss * .07);
+      return clamp01(positiveDays - penalty + .2) * 100;
+    }
+
+    function scoreRecovery(s) {
+      const dd = Math.abs(Number(s.maxDrawdown || 0));
+      if (!dd) return s.total > 0 ? 100 : 50;
+      return clamp01(Math.max(0, s.total) / dd / 3) * 100;
+    }
+
+    function calcScore(list) {
+      const s = calcStats(list);
+      const values = {
+        "Win %": clamp01(s.winRate / .7) * 100,
+        "Profit factor": clamp01((Number.isFinite(s.profitFactor) ? s.profitFactor : 3) / 3) * 100,
+        "Avg win/loss": clamp01((Number.isFinite(s.payoff) ? s.payoff : 3) / 3) * 100,
+        "Recovery factor": scoreRecovery(s),
+        "Max drawdown": scoreDrawdown(s),
+        "Consistency": scoreConsistency(list)
+      };
+      const score = Object.values(values).reduce((a,b) => a + b, 0) / Object.values(values).length;
+      return {score, values};
+    }
+
+    function renderCoreAnalysis(list) {
+      const s = calcStats(list);
+      const streak = calcStreaks(list);
+      const keys = unique([
+        ...manuals.flatMap(m => manualKeywords(m)),
+        ...list.map(t => t.strategy),
+        ...list.map(t => t.ruleViolation),
+        ...list.map(t => t.emotionCause)
+      ]).slice(0, 18);
+      $("overallKeywordCloud").innerHTML = keys.length
+        ? keys.map((k, i) => `<span class="pill ${["blue","violet","green"][i % 3]}">${escapeHtml(k)}</span>`).join("")
+        : `<span class="small-note">暂无关键词。</span>`;
+      $("overallCoreNote").textContent = `整体样本 ${s.trades} 笔，净盈亏 ${money(s.total)}，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，胜率 ${pct(s.winRate)}，最大回撤 ${money(s.maxDrawdown)}。`;
+      const score = calcScore(list);
+      $("scoreNumber").textContent = num(score.score, 2);
+      $("scoreBar").style.setProperty("--score", Math.max(0, Math.min(100, score.score)));
+      $("scoreBreakdown").innerHTML = Object.entries(score.values).map(([k,v]) => `
+        <div class="strategy-metric"><b>${k}</b><span>${num(v,0)}</span></div>
+      `).join("");
+      drawScoreChart(score.values);
+      $("analysisRiskMetrics").innerHTML = [
+        ["总 RR", num(list.reduce((a,t) => a + Number(t.riskReward || 0), 0), 2)],
+        ["RR 期望/笔", num(s.avgR, 2)],
+        ["最长连胜", streak.maxWin],
+        ["最长连负", streak.maxLoss],
+        ["平均持仓", `${num(s.avgHold,0)}m`],
+        ["盈利单持仓", `${num(calcStats(list.filter(t => t.pnl > 0)).avgHold,0)}m`],
+        ["亏损单持仓", `${num(calcStats(list.filter(t => t.pnl < 0)).avgHold,0)}m`],
+        ["盈亏天数", `${dayRows(list).filter(d => d.stats.total > 0).length}/${dayRows(list).filter(d => d.stats.total < 0).length}`]
+      ].map(([label, value]) => `<div class="strategy-metric"><b>${label}</b><span>${value}</span></div>`).join("");
+      renderAggTable("analysisSessionStats", aggregateBy(list, t => t.session), "时段");
+      renderAggTable("analysisDirectionStats", aggregateBy(list, t => t.side), "方向");
+      renderAnalysisDiscipline(list);
+      renderAggTable("analysisHourStats", aggregateBy(list, hourBlock), "时段块");
+      renderAggTable("analysisStrategyStats", aggregateBy(list, t => t.strategy), "策略");
+    }
+
+    function renderAnalysisDiscipline(list) {
+      const rows = [
+        {key:"守纪律", rows:list.filter(t => !derivedTrade(t).ruleBroken)},
+        {key:"未守纪律", rows:list.filter(t => derivedTrade(t).ruleBroken)}
+      ];
+      $("analysisDisciplineStats").innerHTML = `<thead><tr><th>执行</th><th>交易</th><th>胜率</th><th>PF</th><th>期望</th><th>净盈亏</th></tr></thead><tbody>` +
+        rows.map(r => {
+          const s = calcStats(r.rows);
+          return `<tr><td><span class="pill ${r.key === "守纪律" ? "green" : "red"}">${r.key}</span></td><td>${s.trades}</td><td>${pct(s.winRate)}</td><td>${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td><td class="${pnlClass(s.expectancy)}">${money(s.expectancy)}</td><td class="${pnlClass(s.total)}">${money(s.total)}</td></tr>`;
+        }).join("") + `</tbody>`;
+    }
+
+    function drawScoreChart(values) {
+      const c = $("scoreChart");
+      if (!c) return;
+      const ctx = c.getContext("2d");
+      clearCanvas(c, ctx);
+      const labels = Object.keys(values);
+      const cx = c.width / 2;
+      const cy = c.height / 2;
+      const radius = Math.min(c.width, c.height) * .34;
+      ctx.fillStyle = "#fbfaf7";
+      ctx.fillRect(0, 0, c.width, c.height);
+      for (let ring=1; ring<=5; ring++) {
+        ctx.beginPath();
+        labels.forEach((_, i) => {
+          const a = -Math.PI / 2 + i * Math.PI * 2 / labels.length;
+          const r = radius * ring / 5;
+          const x = cx + Math.cos(a) * r;
+          const y = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.strokeStyle = "rgba(110,99,200,.14)";
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      labels.forEach((label, i) => {
+        const a = -Math.PI / 2 + i * Math.PI * 2 / labels.length;
+        const r = radius * clamp01(values[label] / 100);
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = "rgba(110,99,200,.35)";
+      ctx.strokeStyle = "#6e63c8";
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#5f6070";
+      ctx.font = "14px Inter, sans-serif";
+      labels.forEach((label, i) => {
+        const a = -Math.PI / 2 + i * Math.PI * 2 / labels.length;
+        const x = cx + Math.cos(a) * (radius + 46);
+        const y = cy + Math.sin(a) * (radius + 28);
+        ctx.textAlign = x < cx - 10 ? "right" : x > cx + 10 ? "left" : "center";
+        ctx.fillText(label, x, y);
+      });
+    }
+
+    function localDateKey(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    function drawEquityCurve(list) {
+      const c = $("equityChart"), ctx = c.getContext("2d");
+      clearCanvas(c, ctx);
+      let equity = 0, peak = 0;
+      const pts = list.map((t, i) => {
+        equity += Number(t.pnl || 0);
+        peak = Math.max(peak, equity);
+        return {x:i, y:equity, pnl:Number(t.pnl || 0), dd:equity - peak, label:t.date};
+      });
+      $("equityMeta").textContent = pts.length ? `${pts[0].label} → ${pts.at(-1).label}` : "";
+      const pad = 42;
+      const paint = (hoverIndex = -1) => {
+        clearCanvas(c, ctx);
+        drawChartBackground(ctx, c, "Cumulative P&L");
+        if (!pts.length) return;
+        const minY = Math.min(0, ...pts.map(p => p.y));
+        const maxY = Math.max(0, ...pts.map(p => p.y));
+        const mapX = i => pad + (pts.length === 1 ? .5 : i / (pts.length - 1)) * (c.width - pad * 1.5);
+        const mapY = y => c.height - pad - ((y - minY) / ((maxY - minY) || 1)) * (c.height - pad * 1.6);
+        const zeroY = mapY(0);
+        drawZeroAxis(ctx, c, zeroY, pad);
+        ctx.fillStyle = "#6d746f";
+        ctx.font = "12px Inter, sans-serif";
+        if (maxY !== 0) ctx.fillText(money(maxY), 8, Math.max(18, mapY(maxY) + 4));
+        ctx.fillText("$0", 12, zeroY - 6);
+        if (minY !== 0) ctx.fillText(money(minY), 8, Math.min(c.height - 10, mapY(minY) + 4));
+
+        const grad = ctx.createLinearGradient(0, mapY(maxY), 0, mapY(minY));
+        grad.addColorStop(0, "rgba(67, 191, 145, .24)");
+        grad.addColorStop(.52, "rgba(67, 191, 145, .04)");
+        grad.addColorStop(.53, "rgba(241, 93, 104, .04)");
+        grad.addColorStop(1, "rgba(241, 93, 104, .22)");
+        ctx.beginPath();
+        pts.forEach((p, i) => {
+          const x = mapX(i), y = mapY(p.y);
+          if (i === 0) ctx.moveTo(x, zeroY);
+          ctx.lineTo(x, y);
+        });
+        ctx.lineTo(mapX(pts.length - 1), zeroY);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.strokeStyle = "#6e63c8";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        pts.forEach((p, i) => {
+          const x = mapX(i), y = mapY(p.y);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        pts.forEach((p, i) => {
+          const x = mapX(i), y = mapY(p.y);
+          ctx.fillStyle = "#fbfaf7";
+          ctx.strokeStyle = "#6e63c8";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, i === hoverIndex ? 5 : 3.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        if (hoverIndex >= 0) {
+          const p = pts[hoverIndex], x = mapX(hoverIndex), y = mapY(p.y);
+          drawHoverGuide(ctx, c, x, zeroY, y, pad);
+          drawTooltip(ctx, c, x, y, [`${p.label}`, `累计 ${money(p.y)}`, `当日 ${money(p.pnl)}`]);
+        }
+      };
+      paint();
+      installHover(c, pts.length, i => paint(i), () => paint());
+    }
+
+    function drawEquity(list) {
+      const c = $("equityChart"), ctx = c.getContext("2d");
+      clearCanvas(c, ctx);
+      let sum = 0;
+      const pts = list.map((t, i) => ({x:i, y:(sum += Number(t.pnl || 0)), label:t.date}));
+      $("equityMeta").textContent = pts.length ? `${pts[0].label} → ${pts.at(-1).label}` : "";
+      drawAxes(ctx, c, "总盈亏");
+      if (!pts.length) return;
+      const minY = Math.min(0, ...pts.map(p => p.y));
+      const maxY = Math.max(0, ...pts.map(p => p.y));
+      const pad = 42;
+      const mapX = i => pad + (pts.length === 1 ? .5 : i / (pts.length - 1)) * (c.width - pad * 1.5);
+      const mapY = y => c.height - pad - ((y - minY) / ((maxY - minY) || 1)) * (c.height - pad * 1.6);
+      ctx.strokeStyle = "#148a5b";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      pts.forEach((p, i) => {
+        const x = mapX(i), y = mapY(p.y);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.fillStyle = "#148a5b";
+      pts.forEach((p, i) => {
+        const x = mapX(i), y = mapY(p.y);
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+      });
+      labelYAxis(ctx, c, minY, maxY, money);
+    }
+
+    function drawDailyBars(rows) {
+      const c = $("dailyBarChart"), ctx = c.getContext("2d");
+      const values = rows.map(r => r.stats.total);
+      const pad = 42;
+      const paint = (hoverIndex = -1) => {
+        clearCanvas(c, ctx);
+        drawChartBackground(ctx, c, "");
+        if (!rows.length) return;
+        const maxAbs = Math.max(1, ...values.map(v => Math.abs(v)));
+        const zeroY = c.height / 2;
+        const plotW = c.width - pad * 1.5;
+        const step = plotW / rows.length;
+        const barW = Math.max(8, step * .58);
+        drawZeroAxis(ctx, c, zeroY, pad);
+        values.forEach((v, i) => {
+          const x = pad + i * step + (step - barW) / 2;
+          const h = Math.abs(v) / maxAbs * (c.height / 2 - 30);
+          const y = v >= 0 ? zeroY - h : zeroY;
+          ctx.fillStyle = v >= 0 ? "#43bf91" : "#f15d68";
+          roundRect(ctx, x, y, barW, Math.max(3, h), 4);
+          ctx.fill();
+        });
+        const cumulative = [];
+        values.reduce((sum, v) => { cumulative.push(sum + v); return sum + v; }, 0);
+        const minCum = Math.min(...cumulative, 0);
+        const maxCum = Math.max(...cumulative, 0);
+        const mapCumY = y => c.height - pad - ((y - minCum) / ((maxCum - minCum) || 1)) * (c.height - pad * 1.5);
+        ctx.strokeStyle = "#6e63c8";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        cumulative.forEach((v, i) => {
+          const x = pad + i * step + step / 2;
+          const y = mapCumY(v);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        cumulative.forEach((v, i) => {
+          const x = pad + i * step + step / 2;
+          const y = mapCumY(v);
+          ctx.fillStyle = "#fbfaf7";
+          ctx.strokeStyle = "#6e63c8";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, i === hoverIndex ? 4.5 : 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+        if (hoverIndex >= 0) {
+          const v = values[hoverIndex];
+          const x = pad + hoverIndex * step + step / 2;
+          const h = Math.abs(v) / maxAbs * (c.height / 2 - 30);
+          const y = v >= 0 ? zeroY - h : zeroY + h;
+          drawHoverGuide(ctx, c, x, zeroY, y, pad);
+          drawTooltip(ctx, c, x, y, [`${rows[hoverIndex].key}`, `当日 ${money(v)}`, `累计 ${money(cumulative[hoverIndex])}`]);
+        }
+      };
+      paint();
+      installHover(c, rows.length, i => paint(i), () => paint());
+    }
+
+    function clearCanvas(c, ctx) {
+      const ratio = window.devicePixelRatio || 1;
+      const w = c.clientWidth * ratio;
+      const h = c.clientHeight * ratio;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.clearRect(0,0,c.width,c.height);
+    }
+
+    function drawAxes(ctx, c, label) {
+      drawChartBackground(ctx, c, label);
+    }
+
+    function drawChartBackground(ctx, c, label) {
+      ctx.fillStyle = "#fbfaf7";
+      ctx.fillRect(0,0,c.width,c.height);
+      const pad = 42;
+      if (label) {
+        ctx.fillStyle = "#6d746f";
+        ctx.font = "12px Inter, sans-serif";
+        ctx.fillText(label, pad, 18);
+      }
+    }
+
+    function drawZeroAxis(ctx, c, zeroY, pad) {
+      ctx.strokeStyle = "#bcb4a7";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, zeroY);
+      ctx.lineTo(c.width - pad / 2, zeroY);
+      ctx.stroke();
+    }
+
+    function labelYAxis(ctx, c, minY, maxY, fmt) {
+      ctx.fillStyle = "#6d746f";
+      ctx.font = "12px Inter, sans-serif";
+      ctx.fillText(fmt(maxY), 8, 34);
+      ctx.fillText(fmt(minY), 8, c.height - 22);
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      const rr = Math.min(r, Math.abs(h) / 2, w / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rr, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rr);
+      ctx.arcTo(x + w, y + h, x, y + h, rr);
+      ctx.arcTo(x, y + h, x, y, rr);
+      ctx.arcTo(x, y, x + w, y, rr);
+      ctx.closePath();
+    }
+
+    function installHover(canvas, count, onHover, onLeave) {
+      canvas.onmousemove = e => {
+        if (!count) return;
+        const rect = canvas.getBoundingClientRect();
+        const ratio = canvas.width / rect.width;
+        const pad = 42;
+        const x = (e.clientX - rect.left) * ratio;
+        const plotW = canvas.width - pad * 1.5;
+        const idx = Math.max(0, Math.min(count - 1, Math.round(((x - pad) / plotW) * (count - 1))));
+        onHover(idx);
+      };
+      canvas.onmouseleave = onLeave;
+    }
+
+    function drawHoverGuide(ctx, c, x, zeroY, pointY, pad) {
+      ctx.save();
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "rgba(47, 42, 64, .45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, pad / 2);
+      ctx.lineTo(x, c.height - pad);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(110, 99, 200, .7)";
+      ctx.beginPath();
+      ctx.moveTo(x, zeroY);
+      ctx.lineTo(x, pointY);
+      ctx.stroke();
+      ctx.fillStyle = "#6e63c8";
+      ctx.beginPath();
+      ctx.arc(x, pointY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawTooltip(ctx, c, x, y, lines) {
+      ctx.save();
+      ctx.font = "12px Inter, sans-serif";
+      const width = Math.max(...lines.map(line => ctx.measureText(line).width)) + 18;
+      const height = lines.length * 17 + 12;
+      let tx = x + 12;
+      let ty = y - height - 10;
+      if (tx + width > c.width - 8) tx = x - width - 12;
+      if (ty < 8) ty = y + 12;
+      ctx.fillStyle = "rgba(23, 7, 41, .9)";
+      roundRect(ctx, tx, ty, width, height, 7);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      lines.forEach((line, i) => ctx.fillText(line, tx + 9, ty + 20 + i * 17));
+      ctx.restore();
+    }
+
+    function collectManualText(m = {}) {
+      return [m.name, m.market, m.reflection, m.keywords, m.entry, m.exit, m.invalid].filter(Boolean).join("\n");
+    }
+
+    function extractManualKeywords(text) {
+      const source = String(text || "");
+      const dictionary = [
+        "大周期","关键位","市场轮廓","共振","5分钟","1分钟","30m","1h","LVP","LVN","VWAP",
+        "吸收","主动攻击","aggression","absorption","squeeze","回踩","突破","突破失败","反包",
+        "pin bar","影线","K线","订单流","套单","价值区","Delta","Auction","开盘价","美盘",
+        "亚盘","欧盘","早盘","午盘","止损","止盈","风控","纪律","情绪","追单","抢跑",
+        "逆势","确认","结构","动能","scalp","AAA","AA","A"
+      ];
+      const found = dictionary.filter(k => source.toLowerCase().includes(k.toLowerCase()));
+      const english = (source.match(/\b[A-Za-z][A-Za-z0-9+\-/]{1,}\b/g) || [])
+        .filter(w => !["the","and","for","with","from","this","that","Long","Short","Active","Watch","Paused"].includes(w))
+        .slice(0, 20);
+      return unique([...found, ...english]).slice(0, 18);
+    }
+
+    function manualKeywords(m = {}) {
+      const typed = String(m.keywords || "").split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
+      return unique([...typed, ...extractManualKeywords(collectManualText(m))]).slice(0, 18);
+    }
+
+    function renderStrategyAnalysis(m = {}) {
+      const rows = trades.map(derivedTrade).filter(t => t.strategy === m.name);
+      const s = calcStats(rows);
+      const keys = manualKeywords(m);
+      $("strategyKeywordCloud").innerHTML = keys.length
+        ? keys.map((k, i) => `<span class="pill ${["blue","violet","green"][i % 3]}">${escapeHtml(k)}</span>`).join("")
+        : `<span class="small-note">写入策略长文后点击“提炼关键词”。</span>`;
+      $("strategyCoreNote").textContent = keys.length
+        ? `复习重点：${keys.slice(0, 8).join(" / ")}`
+        : "这里保留关键词，不生成长总结，避免覆盖你的原始思考。";
+    }
+
+    function extractCurrentManualKeywords() {
+      const draft = {
+        name: $("manualName").value,
+        market: $("manualMarket").value,
+        reflection: $("manualReflection").value,
+        keywords: $("manualKeywords").value,
+        entry: $("manualEntry").value,
+        exit: $("manualExit").value,
+        invalid: $("manualInvalid").value
+      };
+      const keys = manualKeywords(draft);
+      $("manualKeywords").value = keys.join(", ");
+      renderStrategyAnalysis({...draft, keywords: $("manualKeywords").value});
+    }
+
+    function renderManuals() {
+      $("strategyList").innerHTML = manuals.map(m => `<div class="strategy-item ${m.id === selectedManualId ? "active" : ""}" data-manual="${m.id}">
+        <h4>${escapeHtml(m.name)} <span class="pill ${m.status === "Active" ? "green" : m.status === "Paused" ? "red" : "blue"}">${escapeHtml(m.status)}</span></h4>
+        <p>${escapeHtml(m.market)} · ${escapeHtml(manualKeywords(m).slice(0, 4).join(" / ") || m.entry)}</p>
+      </div>`).join("");
+      document.querySelectorAll("[data-manual]").forEach(el => el.addEventListener("click", () => {
+        selectedManualId = el.dataset.manual;
+        fillManualForm();
+        renderManuals();
+      }));
+      fillManualForm();
+    }
+
+    function fillManualForm() {
+      const m = selectedManualId ? (manuals.find(x => x.id === selectedManualId) || manuals[0] || {}) : {};
+      $("manualId").value = m.id || "";
+      $("manualName").value = m.name || "";
+      $("manualMarket").value = m.market || "";
+      $("manualStatus").value = m.status || "Active";
+      $("manualReflection").value = m.reflection || "";
+      $("manualKeywords").value = m.keywords || "";
+      $("manualEntry").value = m.entry || "";
+      $("manualExit").value = m.exit || "";
+      $("manualInvalid").value = m.invalid || "";
+      renderStrategyAnalysis(m);
+    }
+
+    function renderReview(list) {
+      const s = calcStats(list);
+      const byStrategy = aggregateBy(list, t => t.strategy);
+      const weak = byStrategy.filter(x => x.stats.trades >= 3).sort((a,b) => a.stats.profitFactor - b.stats.profitFactor)[0];
+      const best = byStrategy.filter(x => x.stats.trades >= 2).sort((a,b) => b.stats.profitFactor - a.stats.profitFactor)[0];
+      const bySession = aggregateBy(list, t => t.session);
+      const badSession = bySession.sort((a,b) => a.stats.total - b.stats.total)[0];
+      const byPart = aggregateBy(list, t => t.dayPart);
+      const weakPart = byPart.sort((a,b) => a.stats.total - b.stats.total)[0];
+      const lowGradeLosses = list.filter(t => Number(t.pnl) < 0 && Number(t.grade || 0) <= 2);
+      const cards = [
+        ["账户状态", `当前筛选内总盈亏 ${money(s.total)}，净点数 ${num(s.totalPoints,1)} pts，Profit Factor ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，数学期望 ${money(s.expectancy)}。${s.profitFactor < 1 ? "先降低频率并限制低分交易。" : "整体可交易，但仍需按策略拆分风险。"} `],
+        ["策略偏差", weak ? `${weak.key} 是当前弱项，${weak.stats.trades} 笔，PF ${weak.stats.profitFactor === Infinity ? "∞" : num(weak.stats.profitFactor)}，净盈亏 ${money(weak.stats.total)}。` : "样本不足，暂不判定弱策略。"],
+        ["优势来源", best ? `${best.key} 贡献最好，胜率 ${pct(best.stats.winRate)}，期望 ${money(best.stats.expectancy)}，平均 ${num(best.stats.avgPoints,2)} pts。优先扩大这个策略的高质量样本。` : "暂无足够优势样本。"],
+        ["时段质量", badSession ? `${badSession.key} 时段表现最低，净盈亏 ${money(badSession.stats.total)}。如果该时段低于整体期望，下一周只保留高质量策略机会。` : "暂无时段数据。"],
+        ["交易段质量", weakPart ? `${weakPart.key} 表现最弱，净盈亏 ${money(weakPart.stats.total)}，平均持仓 ${num(weakPart.stats.avgHold,0)} 分钟。检查是否存在午盘低流动性硬做、早盘抢跑或尾盘追单。` : "暂无交易段数据。"],
+        ["执行纪律", `${lowGradeLosses.length} 笔亏损交易执行评分 ≤2。建议把这些交易归档成错误标签：抢跑、追单、逆势、未等确认。`]
+      ];
+      $("aiReview").innerHTML = cards.map(([h,p]) => `<div class="ai-card"><h4>${h}</h4><p>${p}</p></div>`).join("");
+    }
+
+    function renderRoadmap() {
+      const items = [
+        ["导入模板锁定", "固定 CSV 字段：id, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entry, initialStop, exit, riskReward, pnl, qty, grade, ruleBroken, ruleViolation, emotionCause, notes。点数、美元、Risk/Reward 和持仓时间自动计算；pnl 和 riskReward 可留空，也可以只填真实 pnl。"],
+        ["截图归档", "每笔交易追加入场图、出场图、复盘图，后续可按策略自动筛选错误截图。"],
+        ["MAE/MFE", "记录最大浮亏点数和最大浮盈点数，判断止损是否太紧、止盈是否太早。"],
+        ["手续费与滑点", "按品种配置手续费、滑点和每点美元，区分毛盈亏和净盈亏。"],
+        ["规则违规标签", "增加 ruleBreak 字段，把亏损分成策略亏损和执行亏损，避免误杀有效策略。"],
+        ["风险模块", "加入日内 max loss、连续亏损暂停、单笔风险占比、周回撤限制。"],
+        ["真实 AI 接入", "后续接 OpenAI API，把策略手册、交易日志和截图一起喂给模型生成周报。"]
+      ];
+      $("roadmap").innerHTML = items.map(([h,p]) => `<div class="ai-card"><h4>${h}</h4><p>${p}</p></div>`).join("");
+    }
+
+    function fillTradeForm(t = {}) {
+      t = t.id ? derivedTrade(t) : t;
+      manualDayPartTouched = Boolean(t.dayPart);
+      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","qty","points","pnl","riskReward","holdingMinutes","grade","ruleBroken","ruleViolation","emotionCause","notes"].forEach(id => {
+        const key = id === "tradeId" ? "id" : id;
+        if ($(id)) $(id).value = t[key] ?? "";
+      });
+      if (!$("date").value) $("date").valueAsDate = new Date();
+      if (!$("session").value) $("session").value = "美盘";
+      if (!$("dayPart").value) $("dayPart").value = "早盘";
+      if (!$("side").value) $("side").value = "Long";
+    }
+
+    function editTrade(id) {
+      const t = trades.find(x => x.id === id);
+      if (!t) return;
+      showView("trades");
+      fillTradeForm(t);
+      window.scrollTo({top: 0, behavior: "smooth"});
+    }
+
+    function computeTradeFields(forcePnl = false) {
+      const symbol = $("symbol").value.trim();
+      const entry = toNum($("entry").value);
+      const initialStop = toNum($("initialStop").value);
+      const exit = toNum($("exit").value);
+      const qty = toNum($("qty").value) ?? 0;
+      const pointValue = pointValueForSymbol(symbol);
+      const dir = $("side").value === "Short" ? -1 : 1;
+      if (entry !== null && exit !== null) {
+        const points = (exit - entry) * dir;
+        $("points").value = num(points, 2);
+        if ((forcePnl || !$("pnl").value) && qty && pointValue) $("pnl").value = num(points * pointValue * qty, 2);
+        const risk = initialStop !== null ? Math.abs(entry - initialStop) : 0;
+        if (risk) $("riskReward").value = num(points / risk, 2);
+        else if (forcePnl) $("riskReward").value = "";
+      }
+      const hold = minutesBetween($("date").value, $("entryTime").value, $("exitTime").value);
+      if (hold) $("holdingMinutes").value = hold;
+      if (!manualDayPartTouched) $("dayPart").value = inferDayPart($("entryTime").value, $("session").value);
+    }
+
+    function saveTradeForm() {
+      computeTradeFields(true);
+      const t = {
+        id: $("tradeId").value || "T" + Date.now(),
+        date: $("date").value,
+        entryTime: $("entryTime").value,
+        exitTime: $("exitTime").value,
+        session: $("session").value,
+        dayPart: $("dayPart").value,
+        symbol: $("symbol").value.trim(),
+        side: $("side").value,
+        strategy: $("strategy").value.trim(),
+        entry: toNum($("entry").value) ?? "",
+        initialStop: toNum($("initialStop").value) ?? "",
+        exit: toNum($("exit").value) ?? "",
+        qty: toNum($("qty").value) ?? 0,
+        pointValue: pointValueForSymbol($("symbol").value),
+        points: toNum($("points").value) ?? "",
+        pnl: toNum($("pnl").value) ?? 0,
+        riskReward: toNum($("riskReward").value) ?? "",
+        holdingMinutes: toNum($("holdingMinutes").value) ?? 0,
+        grade: toNum($("grade").value) ?? 0,
+        ruleBroken: $("ruleBroken").value === "true",
+        ruleViolation: $("ruleViolation").value,
+        emotionCause: $("emotionCause").value,
+        notes: $("notes").value.trim()
+      };
+      if (!t.date || !t.symbol || !t.strategy) return;
+      const i = trades.findIndex(x => x.id === t.id);
+      if (i >= 0) trades[i] = t; else trades.push(t);
+      saveAll();
+      fillTradeForm();
+      render();
+    }
+
+    function saveManualForm() {
+      const m = {
+        id: $("manualId").value || "M" + Date.now(),
+        name: $("manualName").value.trim(),
+        market: $("manualMarket").value.trim(),
+        status: $("manualStatus").value,
+        reflection: $("manualReflection").value.trim(),
+        keywords: $("manualKeywords").value.trim(),
+        entry: $("manualEntry").value.trim(),
+        exit: $("manualExit").value.trim(),
+        invalid: $("manualInvalid").value.trim()
+      };
+      if (!m.name) return;
+      const i = manuals.findIndex(x => x.id === m.id);
+      if (i >= 0) manuals[i] = m; else manuals.push(m);
+      selectedManualId = m.id;
+      saveAll();
+      renderManuals();
+      renderFilters();
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], cell = "", quote = false;
+      for (let i=0; i<text.length; i++) {
+        const ch = text[i], next = text[i+1];
+        if (ch === '"' && quote && next === '"') { cell += '"'; i++; }
+        else if (ch === '"') quote = !quote;
+        else if (ch === "," && !quote) { row.push(cell); cell = ""; }
+        else if ((ch === "\n" || ch === "\r") && !quote) {
+          if (cell || row.length) { row.push(cell); rows.push(row); row = []; cell = ""; }
+          if (ch === "\r" && next === "\n") i++;
+        } else cell += ch;
+      }
+      if (cell || row.length) { row.push(cell); rows.push(row); }
+      const headers = rows.shift()?.map(h => h.trim()) || [];
+      return rows.filter(r => r.some(Boolean)).map((r, idx) => {
+        const o = {};
+        headers.forEach((h, i) => o[h] = r[i] ?? "");
+        return {
+          id: o.id || "I" + Date.now() + idx,
+          date: o.date || o.Date || "",
+          entryTime: o.entryTime || o.entry_time || o["入场时间"] || "",
+          exitTime: o.exitTime || o.exit_time || o["出场时间"] || "",
+          session: o.session || o["时段"] || inferSession(o.entryTime || o.entry_time || ""),
+          dayPart: o.dayPart || o.day_part || o["交易段"] || "",
+          symbol: o.symbol || o["品种"] || "",
+          side: o.side || o["方向"] || "Long",
+          strategy: o.strategy || o["策略"] || "",
+          entry: o.entry || o["入场价"] || "",
+          initialStop: o.initialStop || o.initial_stop || o.stop || o["初始止损"] || o["止损价"] || "",
+          exit: o.exit || o["出场价"] || "",
+          qty: o.qty || o["数量"] || "",
+          pointValue: o.pointValue || o.point_value || o["每点美元"] || "",
+          points: o.points || o["点数"] || "",
+          pnl: o.pnl || o.PnL || o["盈亏"] || "",
+          riskReward: o.riskReward || o.risk_reward || o.rMultiple || o.r || o["风险收益比"] || o["R倍数"] || "",
+          holdingMinutes: o.holdingMinutes || o.holding_minutes || o["持仓分钟"] || "",
+          grade: o.grade || o["执行评分"] || "",
+          ruleBroken: parseBool(o.ruleBroken || o.rule_broken || o["规则执行"] || o["破规则"]),
+          ruleViolation: o.ruleViolation || o.rule_violation || o["违规标签"] || "",
+          emotionCause: o.emotionCause || o.emotion_cause || o["情绪原因"] || "",
+          notes: o.notes || o["备注"] || ""
+        };
+      }).filter(t => t.date && t.symbol);
+    }
+
+    function parseBool(v) {
+      const text = String(v ?? "").trim().toLowerCase();
+      return ["true", "1", "yes", "y", "破规则", "违规", "broken"].includes(text);
+    }
+
+    function inferSession(time) {
+      const h = Number(String(time).split(":")[0]);
+      if (!Number.isFinite(h)) return "美盘";
+      if (h >= 7 && h < 9) return "欧盘";
+      if (h >= 20 || h < 4) return "亚盘";
+      return "美盘";
+    }
+
+    function exportCsv() {
+      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","riskReward","pnl","qty","grade","ruleBroken","ruleViolation","emotionCause","notes"];
+      const lines = [headers.join(",")].concat(trades.map(t => derivedTrade(t)).map(t => headers.map(h => csvCell(t[h])).join(",")));
+      const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "trading-journal.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvCell(v) {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? '"' + s.replaceAll('"','""') + '"' : s;
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function setSettingsFields() {
+      $("settingNQ").value = settings.NQ;
+      $("settingMNQ").value = settings.MNQ;
+      $("settingES").value = settings.ES;
+      $("settingMES").value = settings.MES;
+    }
+
+    function openSettingsModal() {
+      setSettingsFields();
+      $("settingsModal").classList.add("open");
+    }
+
+    function closeSettingsModal() {
+      $("settingsModal").classList.remove("open");
+    }
+
+    function saveSettingsForm() {
+      settings = {
+        NQ: Number($("settingNQ").value || 20),
+        MNQ: Number($("settingMNQ").value || 2),
+        ES: Number($("settingES").value || 50),
+        MES: Number($("settingMES").value || 5)
+      };
+      saveAll();
+      closeSettingsModal();
+      render();
+    }
+
+    function showView(id) {
+      activeView = id;
+      document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === id));
+      document.querySelectorAll(".nav button").forEach(b => b.classList.toggle("active", b.dataset.view === id));
+      const names = {
+        dashboard:["总览","交易表现、策略质量和执行偏差"],
+        trades:["交易日志","入场/出场、时段和执行记录"],
+        daily:["每日/每周","日度总结与周统计"],
+        strategies:["策略手册","策略长文、关键词和执行规则"],
+        analysis:["核心分析","全部交易的风险、质量、纪律和评分"],
+        review:["AI复盘","基于当前筛选数据的复盘结论"]
+      };
+      $("pageTitle").textContent = names[id][0];
+      $("pageSub").textContent = names[id][1];
+      setTimeout(() => {
+        const list = filteredTrades();
+        drawCharts(list);
+        if (id === "analysis") renderCoreAnalysis(list);
+      }, 0);
+    }
+
+    function render() {
+      renderFilters();
+      const list = filteredTrades();
+      renderKpis(list);
+      renderTables(list);
+      renderCoreAnalysis(list);
+      drawCharts(list);
+      renderManuals();
+      renderReview(list);
+      renderRoadmap();
+    }
+
+    document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
+    ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
+    $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
+    $("resetSample").addEventListener("click", () => { trades = structuredClone(sampleTrades); manuals = structuredClone(sampleManual); selectedManualId = manuals[0].id; saveAll(); render(); });
+    $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
+    $("calcTrade").addEventListener("click", () => computeTradeFields(true));
+    ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("input", () => computeTradeFields(false)));
+    ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("change", () => computeTradeFields(false)));
+    $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; });
+    $("openSettings").addEventListener("click", openSettingsModal);
+    $("closeSettings").addEventListener("click", closeSettingsModal);
+    $("saveSettings").addEventListener("click", saveSettingsForm);
+    $("settingsModal").addEventListener("click", e => { if (e.target.id === "settingsModal") closeSettingsModal(); });
+    $("prevMonth").addEventListener("click", () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); renderCalendar(filteredTrades()); });
+    $("nextMonth").addEventListener("click", () => { calendarCursor.setMonth(calendarCursor.getMonth() + 1); renderCalendar(filteredTrades()); });
+    $("thisMonth").addEventListener("click", () => { calendarCursor = new Date(); renderCalendar(filteredTrades()); });
+    $("saveTrade").addEventListener("click", saveTradeForm);
+    $("clearTradeForm").addEventListener("click", () => fillTradeForm());
+    $("saveStrategy").addEventListener("click", saveManualForm);
+    $("extractKeywords").addEventListener("click", extractCurrentManualKeywords);
+    ["manualReflection","manualKeywords","manualEntry","manualExit","manualInvalid","manualName","manualMarket"].forEach(id => $(id).addEventListener("input", () => {
+      renderStrategyAnalysis({
+        name: $("manualName").value,
+        market: $("manualMarket").value,
+        reflection: $("manualReflection").value,
+        keywords: $("manualKeywords").value,
+        entry: $("manualEntry").value,
+        exit: $("manualExit").value,
+        invalid: $("manualInvalid").value
+      });
+    }));
+    $("newStrategy").addEventListener("click", () => { selectedManualId = ""; fillManualForm(); renderManuals(); });
+    $("runReview").addEventListener("click", () => renderReview(filteredTrades()));
+    $("exportCsv").addEventListener("click", exportCsv);
+    $("csvInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      const rows = parseCsv(text);
+      if (rows.length) {
+        trades = rows;
+        saveAll();
+        render();
+      }
+      e.target.value = "";
+    });
+    window.addEventListener("resize", () => drawCharts(filteredTrades()));
+
+    render();
+    fillTradeForm();
+  </script>
+</body>
+</html>
