@@ -1,0 +1,2 @@
+# trading-review-dashboard
+tradingjurnal
