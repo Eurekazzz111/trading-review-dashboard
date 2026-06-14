@@ -195,6 +195,27 @@
       flex-wrap: wrap;
     }
 
+    .auth-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+      border-left: 1px solid #dfdbe8;
+      padding-left: 10px;
+    }
+
+    .auth-bar input {
+      width: 210px;
+      min-height: 34px;
+    }
+
+    .auth-status {
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 260px;
+      overflow-wrap: anywhere;
+    }
+
     .file-btn {
       position: relative;
       overflow: hidden;
@@ -908,6 +929,12 @@
           <button id="exportCsv">⇩ 导出CSV</button>
           <button id="openSettings">⚙ 设置</button>
           <button id="resetSample">清空数据</button>
+          <div class="auth-bar">
+            <input id="authEmail" type="email" placeholder="输入邮箱登录云端">
+            <button id="loginEmail" class="primary">邮箱登录</button>
+            <button id="logoutEmail" style="display:none;">退出</button>
+            <span id="authStatus" class="auth-status">未登录，本机保存</span>
+          </div>
         </div>
       </div>
 
@@ -1241,6 +1268,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const STORAGE_KEY = "trading-review-v1";
     const MANUAL_KEY = "trading-review-strategies-v1";
@@ -1248,6 +1276,9 @@
     const LEGACY_IMAGE_STORAGE_KEY = "trading-review-images-v1";
     const DATA_VERSION_KEY = "trading-review-data-version";
     const CURRENT_DATA_VERSION = "empty-start-v1";
+    const SUPABASE_URL = "https://zbdwntfogxucjtysbqri.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_LuLPHS23WkV72EeNj0ErlQ_RsU6gq54";
+    const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_KEY);
     localStorage.removeItem(LEGACY_IMAGE_STORAGE_KEY);
 
     if (localStorage.getItem(DATA_VERSION_KEY) !== CURRENT_DATA_VERSION) {
@@ -1267,6 +1298,8 @@
     let manuals = loadManuals();
     let settings = loadSettings();
     let activeView = "dashboard";
+    let currentUser = null;
+    let cloudReady = false;
     let selectedManualId = manuals[0]?.id || "";
     let calendarCursor = new Date();
     let selectedDay = "";
@@ -1297,6 +1330,119 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      if (currentUser && cloudReady) saveCloudData();
+    }
+
+    function setAuthStatus(message) {
+      const el = $("authStatus");
+      if (el) el.textContent = message;
+    }
+
+    async function initAuth() {
+      if (!supabaseClient) {
+        setAuthStatus("Supabase SDK 未加载，本机保存");
+        return;
+      }
+      const {data} = await supabaseClient.auth.getSession();
+      currentUser = data.session?.user || null;
+      updateAuthUi();
+      if (currentUser) await loadCloudData();
+      supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+        currentUser = session?.user || null;
+        updateAuthUi();
+        if (currentUser) await loadCloudData();
+      });
+    }
+
+    function updateAuthUi() {
+      const loggedIn = Boolean(currentUser);
+      $("authEmail").style.display = loggedIn ? "none" : "";
+      $("loginEmail").style.display = loggedIn ? "none" : "";
+      $("logoutEmail").style.display = loggedIn ? "" : "none";
+      setAuthStatus(loggedIn ? `已登录：${currentUser.email}` : "未登录，本机保存");
+    }
+
+    async function loginWithEmail() {
+      const email = $("authEmail").value.trim();
+      if (!email || !supabaseClient) return;
+      setAuthStatus("正在发送登录邮件...");
+      const {error} = await supabaseClient.auth.signInWithOtp({
+        email,
+        options: {emailRedirectTo: location.origin + location.pathname}
+      });
+      setAuthStatus(error ? `登录邮件发送失败：${error.message}` : "登录邮件已发送，请去邮箱点击链接");
+    }
+
+    async function logout() {
+      if (!supabaseClient) return;
+      await supabaseClient.auth.signOut();
+      currentUser = null;
+      cloudReady = false;
+      trades = loadTrades();
+      manuals = loadManuals();
+      settings = loadSettings();
+      updateAuthUi();
+      render();
+    }
+
+    async function loadCloudData() {
+      if (!currentUser || !supabaseClient) return;
+      setAuthStatus(`同步云端数据：${currentUser.email}`);
+      const [tradeRes, manualRes, settingsRes] = await Promise.all([
+        supabaseClient.from("trades").select("id,data").order("trade_date", {ascending:true}),
+        supabaseClient.from("strategy_manuals").select("id,data").order("created_at", {ascending:true}),
+        supabaseClient.from("user_settings").select("data").maybeSingle()
+      ]);
+      const firstError = tradeRes.error || manualRes.error || settingsRes.error;
+      if (firstError) {
+        cloudReady = false;
+        setAuthStatus(`云端表未就绪：${firstError.message}`);
+        return;
+      }
+      const cloudTrades = (tradeRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
+      if (cloudTrades.length || !trades.length) trades = cloudTrades;
+      if (manualRes.data?.length) manuals = manualRes.data.map(row => ({id: row.id, ...(row.data || {})}));
+      if (settingsRes.data?.data) settings = {...settings, ...settingsRes.data.data};
+      cloudReady = true;
+      if (!cloudTrades.length && trades.length) await saveCloudData();
+      saveLocalOnly();
+      render();
+      setAuthStatus(`云端已同步：${currentUser.email}`);
+    }
+
+    function saveLocalOnly() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
+      localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    async function saveCloudData() {
+      if (!currentUser || !supabaseClient || !cloudReady) return;
+      const tradeRows = trades.map(t => ({
+        id: String(t.id),
+        user_id: currentUser.id,
+        trade_date: t.date || null,
+        data: t
+      }));
+      const manualRows = manuals.map(m => ({
+        id: String(m.id),
+        user_id: currentUser.id,
+        data: m
+      }));
+      const jobs = [
+        supabaseClient.from("user_settings").upsert({user_id: currentUser.id, data: settings}, {onConflict:"user_id"})
+      ];
+      if (tradeRows.length) jobs.push(supabaseClient.from("trades").upsert(tradeRows, {onConflict:"user_id,id"}));
+      if (manualRows.length) jobs.push(supabaseClient.from("strategy_manuals").upsert(manualRows, {onConflict:"user_id,id"}));
+      const results = await Promise.all(jobs);
+      const error = results.find(r => r.error)?.error;
+      setAuthStatus(error ? `云端保存失败：${error.message}` : `云端已保存：${currentUser.email}`);
+    }
+
+    async function clearCloudTrades() {
+      if (!currentUser || !supabaseClient || !cloudReady) return;
+      const {error} = await supabaseClient.from("trades").delete().eq("user_id", currentUser.id);
+      setAuthStatus(error ? `云端清空失败：${error.message}` : `云端交易已清空：${currentUser.email}`);
     }
 
     function hasValue(v) {
@@ -2513,7 +2659,7 @@
     document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
     ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
     $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
-    $("resetSample").addEventListener("click", () => { trades = []; saveAll(); render(); });
+    $("resetSample").addEventListener("click", async () => { trades = []; saveLocalOnly(); await clearCloudTrades(); render(); });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
     $("calcTrade").addEventListener("click", () => computeTradeFields(true));
     ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("input", () => computeTradeFields(false)));
@@ -2522,6 +2668,9 @@
     $("openSettings").addEventListener("click", openSettingsModal);
     $("closeSettings").addEventListener("click", closeSettingsModal);
     $("saveSettings").addEventListener("click", saveSettingsForm);
+    $("loginEmail").addEventListener("click", loginWithEmail);
+    $("logoutEmail").addEventListener("click", logout);
+    $("authEmail").addEventListener("keydown", e => { if (e.key === "Enter") loginWithEmail(); });
     $("settingsModal").addEventListener("click", e => { if (e.target.id === "settingsModal") closeSettingsModal(); });
     $("prevMonth").addEventListener("click", () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); renderCalendar(filteredTrades()); });
     $("nextMonth").addEventListener("click", () => { calendarCursor.setMonth(calendarCursor.getMonth() + 1); renderCalendar(filteredTrades()); });
@@ -2551,6 +2700,7 @@
       const rows = parseCsv(text);
       if (rows.length) {
         trades = rows;
+        if (currentUser && cloudReady) await clearCloudTrades();
         saveAll();
         render();
       }
@@ -2560,6 +2710,7 @@
 
     render();
     fillTradeForm();
+    initAuth();
   </script>
 </body>
 </html>

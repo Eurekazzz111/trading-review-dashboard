@@ -16,6 +16,7 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 
 - `index.html`：网页正式入口，GitHub Pages 会默认打开这个文件。
 - `trading-journal-simple-example.csv`：CSV 导入示例。
+- `supabase-schema.sql`：Supabase 云端数据库建表和权限策略。
 - `README.md`：项目说明。
 
 ## 当前功能
@@ -29,6 +30,7 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - 按策略、盘段、方向、纪律执行统计
 - 规则违规标签和情绪原因记录
 - 策略手册、核心分析、AI 复盘提示
+- Supabase 邮箱登录和云端同步
 
 ## CSV 格式
 
@@ -73,14 +75,39 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,220
 
 ## 数据保存
 
-当前版本是纯前端静态网页，交易数据保存在当前浏览器的 `localStorage`。
+当前版本支持两种模式：
+
+- 未登录：交易数据保存在当前浏览器的 `localStorage`
+- 邮箱登录后：交易、策略手册、设置会同步到 Supabase 云端数据库
 
 注意：
 
-- 换电脑或换浏览器不会自动同步
-- 清理浏览器缓存可能导致数据丢失
+- 未登录时，换电脑或换浏览器不会自动同步
+- 未登录时，清理浏览器缓存可能导致数据丢失
 - 建议定期导出 CSV 备份
-- 如果后续需要多设备同步，需要升级到数据库版本，例如 Supabase
+
+## Supabase 云端设置
+
+1. 在 Supabase 创建项目
+2. 打开 `SQL Editor`
+3. 粘贴并运行 `supabase-schema.sql`
+4. 打开 `Authentication` -> `URL Configuration`
+5. Site URL 设置为：
+
+```text
+https://Eurekazzz111.github.io/trading-review-dashboard/
+```
+
+6. Redirect URLs 添加：
+
+```text
+https://Eurekazzz111.github.io/trading-review-dashboard/
+```
+
+7. 回到网页，输入邮箱，点击登录
+8. 打开邮箱里的 Magic Link，回到网页后即可云端同步
+
+不要把 Supabase `service_role` key 放到网页里。网页里只应该使用 publishable/anon key。
 
 ## GitHub Pages 部署
 
@@ -91,4 +118,3 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,220
 5. Branch 选择 `main`，目录选择 `/root`
 6. 保存后等待几分钟
 7. 访问 `https://Eurekazzz111.github.io/trading-review-dashboard/`
-
