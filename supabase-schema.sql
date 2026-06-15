@@ -85,6 +85,47 @@ create policy "Users can delete own strategy manuals"
 on public.strategy_manuals for delete
 using (auth.uid() = user_id);
 
+create table if not exists public.strategy_learning_notes (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  id text not null,
+  strategy_name text,
+  note_date date,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
+create index if not exists strategy_learning_notes_user_strategy_idx on public.strategy_learning_notes (user_id, strategy_name, note_date);
+
+drop trigger if exists set_strategy_learning_notes_updated_at on public.strategy_learning_notes;
+create trigger set_strategy_learning_notes_updated_at
+before update on public.strategy_learning_notes
+for each row execute function public.set_updated_at();
+
+alter table public.strategy_learning_notes enable row level security;
+
+drop policy if exists "Users can read own strategy learning notes" on public.strategy_learning_notes;
+create policy "Users can read own strategy learning notes"
+on public.strategy_learning_notes for select
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own strategy learning notes" on public.strategy_learning_notes;
+create policy "Users can insert own strategy learning notes"
+on public.strategy_learning_notes for insert
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own strategy learning notes" on public.strategy_learning_notes;
+create policy "Users can update own strategy learning notes"
+on public.strategy_learning_notes for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own strategy learning notes" on public.strategy_learning_notes;
+create policy "Users can delete own strategy learning notes"
+on public.strategy_learning_notes for delete
+using (auth.uid() = user_id);
+
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   data jsonb not null default '{}'::jsonb,

@@ -925,6 +925,7 @@
         <button data-view="kline">◔ K线图</button>
         <button data-view="daily">◫ 每日/每周</button>
         <button data-view="strategies">◇ 策略手册</button>
+        <button data-view="learning">✎ 策略学习</button>
         <button data-view="analysis">◎ 核心分析</button>
         <button data-view="review">✦ AI复盘</button>
       </nav>
@@ -1233,6 +1234,52 @@
         </div>
       </section>
 
+      <section id="learning" class="view">
+        <div class="manual-layout">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>学习记录</h3>
+              <button id="newLearning">＋</button>
+            </div>
+            <div class="strategy-list" id="learningList"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>策略新思考</h3>
+              <div class="toolbar-row">
+                <button id="deleteLearning">删除</button>
+                <button id="saveLearning" class="primary">保存学习</button>
+              </div>
+            </div>
+            <div class="form-grid">
+              <input type="hidden" id="learningId">
+              <div class="field"><label>日期</label><input id="learningDate" type="date"></div>
+              <div class="field wide"><label>大策略名称</label><select id="learningStrategy"></select></div>
+              <div class="field full"><label>新策略名称（可选）</label><input id="learningStrategyCustom" placeholder="如果下拉里没有，就在这里写一个新的大策略名称"></div>
+              <div class="field full"><label>标题</label><input id="learningTitle" placeholder="例如：开盘回踩后的主动吸收条件"></div>
+              <div class="field full"><label>思考</label><textarea id="learningThoughts" class="reflection-box" placeholder="写你对这个策略的新理解、结构拆解、适用环境和逻辑推演。"></textarea></div>
+              <div class="field full"><label>反思</label><textarea id="learningReflection" class="reflection-box" placeholder="写最近交易或复盘里暴露的问题，哪里做错、为什么错、下次如何避免。"></textarea></div>
+              <div class="field full"><label>新知识</label><textarea id="learningKnowledge" class="reflection-box" placeholder="写你新学到的概念、信号、盘感、订单流或 K 线观察。"></textarea></div>
+              <div class="field full"><label>格外注意的点</label><textarea id="learningCautions" class="reflection-box" placeholder="写最容易忽略、最容易犯错、必须交易前提醒自己的条件。"></textarea></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>归纳复习</h3>
+              <span class="meta">Review</span>
+            </div>
+            <div class="stack">
+              <div>
+                <div class="small-note" style="margin-bottom:8px;">当前学习记录的关键词</div>
+                <div class="keyword-cloud" id="learningKeywordCloud"></div>
+              </div>
+              <div class="strategy-note" id="learningCoreNote"></div>
+              <div class="ai-list" id="learningReviewCards"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section id="analysis" class="view">
         <div class="stack">
           <section class="panel">
@@ -1351,6 +1398,7 @@
   <script>
     const STORAGE_KEY = "trading-review-v1";
     const MANUAL_KEY = "trading-review-strategies-v1";
+    const LEARNING_KEY = "trading-review-learning-v1";
     const SETTINGS_KEY = "trading-review-settings-v1";
     const LEGACY_IMAGE_STORAGE_KEY = "trading-review-images-v1";
     const DATA_VERSION_KEY = "trading-review-data-version";
@@ -1382,11 +1430,13 @@
 
     let trades = loadTrades();
     let manuals = loadManuals();
+    let learningNotes = loadLearningNotes();
     let settings = loadSettings();
     let activeView = "dashboard";
     let currentUser = null;
     let cloudReady = false;
     let selectedManualId = manuals[0]?.id || "";
+    let selectedLearningId = learningNotes[0]?.id || "";
     let calendarCursor = new Date();
     let selectedDay = "";
     let manualDayPartTouched = false;
@@ -1405,6 +1455,12 @@
       try { return JSON.parse(raw); } catch { return structuredClone(sampleManual); }
     }
 
+    function loadLearningNotes() {
+      const raw = localStorage.getItem(LEARNING_KEY);
+      if (!raw) return [];
+      try { return JSON.parse(raw); } catch { return []; }
+    }
+
     function loadSettings() {
       const defaults = {NQ:20, MNQ:2, ES:50, MES:5};
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -1415,6 +1471,7 @@
     function saveAll() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
+      localStorage.setItem(LEARNING_KEY, JSON.stringify(learningNotes));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       if (currentUser && cloudReady) saveCloudData();
     }
@@ -1466,6 +1523,7 @@
       cloudReady = false;
       trades = loadTrades();
       manuals = loadManuals();
+      learningNotes = loadLearningNotes();
       settings = loadSettings();
       updateAuthUi();
       render();
@@ -1474,27 +1532,31 @@
     async function loadCloudData() {
       if (!currentUser || !supabaseClient) return;
       setAuthStatus(`同步云端数据：${currentUser.email}`);
-      const [tradeRes, manualRes, settingsRes, klineRes] = await Promise.all([
+      const [tradeRes, manualRes, learningRes, settingsRes, klineRes] = await Promise.all([
         supabaseClient.from("trades").select("id,data").order("trade_date", {ascending:true}),
         supabaseClient.from("strategy_manuals").select("id,data").order("created_at", {ascending:true}),
+        supabaseClient.from("strategy_learning_notes").select("id,data").order("note_date", {ascending:false}),
         supabaseClient.from("user_settings").select("data").maybeSingle(),
         supabaseClient.from("kline_days").select("day,candles").order("day", {ascending:true})
       ]);
-      const firstError = tradeRes.error || manualRes.error || settingsRes.error || klineRes.error;
+      const firstError = tradeRes.error || manualRes.error || learningRes.error || settingsRes.error || klineRes.error;
       if (firstError) {
         cloudReady = false;
         setAuthStatus(`云端表未就绪：${firstError.message}`);
         return;
       }
       const cloudTrades = (tradeRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
+      const cloudLearning = (learningRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudKlines = Object.fromEntries((klineRes.data || []).map(row => [row.day, row.candles || []]));
       const cloudKlineDays = Object.keys(cloudKlines);
       if (cloudTrades.length || !trades.length) trades = cloudTrades;
       if (manualRes.data?.length) manuals = manualRes.data.map(row => ({id: row.id, ...(row.data || {})}));
+      if (cloudLearning.length || !learningNotes.length) learningNotes = cloudLearning;
       if (settingsRes.data?.data) settings = {...settings, ...settingsRes.data.data};
       if (cloudKlineDays.length || !Object.keys(klineStore).length) klineStore = Object.assign({}, KLINE_DATA, cloudKlines);
       cloudReady = true;
       if (!cloudTrades.length && trades.length) await saveCloudData();
+      if (!cloudLearning.length && learningNotes.length) await saveCloudData();
       if (!cloudKlineDays.length && Object.keys(klineStore).length) await saveCloudKlineData();
       saveLocalOnly();
       render();
@@ -1504,6 +1566,7 @@
     function saveLocalOnly() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
+      localStorage.setItem(LEARNING_KEY, JSON.stringify(learningNotes));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       saveKlineLocalOnly();
     }
@@ -1521,11 +1584,19 @@
         user_id: currentUser.id,
         data: m
       }));
+      const learningRows = learningNotes.map(n => ({
+        id: String(n.id),
+        user_id: currentUser.id,
+        strategy_name: n.strategyName || "",
+        note_date: n.date || null,
+        data: n
+      }));
       const jobs = [
         supabaseClient.from("user_settings").upsert({user_id: currentUser.id, data: settings}, {onConflict:"user_id"})
       ];
       if (tradeRows.length) jobs.push(supabaseClient.from("trades").upsert(tradeRows, {onConflict:"user_id,id"}));
       if (manualRows.length) jobs.push(supabaseClient.from("strategy_manuals").upsert(manualRows, {onConflict:"user_id,id"}));
+      if (learningRows.length) jobs.push(supabaseClient.from("strategy_learning_notes").upsert(learningRows, {onConflict:"user_id,id"}));
       const results = await Promise.all(jobs);
       const error = results.find(r => r.error)?.error;
       setAuthStatus(error ? `云端保存失败：${error.message}` : `云端已保存：${currentUser.email}`);
@@ -1549,6 +1620,12 @@
       if (!currentUser || !supabaseClient || !cloudReady) return;
       const {error} = await supabaseClient.from("trades").delete().eq("user_id", currentUser.id);
       setAuthStatus(error ? `云端清空失败：${error.message}` : `云端交易已清空：${currentUser.email}`);
+    }
+
+    async function deleteCloudLearningNote(id) {
+      if (!currentUser || !supabaseClient || !cloudReady || !id) return;
+      const {error} = await supabaseClient.from("strategy_learning_notes").delete().eq("user_id", currentUser.id).eq("id", id);
+      if (error) setAuthStatus(`云端学习记录删除失败：${error.message}`);
     }
 
     function hasValue(v) {
@@ -2644,6 +2721,110 @@
       renderStrategyAnalysis(m);
     }
 
+    function learningStrategies() {
+      return unique([
+        ...manuals.map(m => m.name),
+        ...trades.map(t => t.strategy),
+        ...learningNotes.map(n => n.strategyName)
+      ]).filter(Boolean);
+    }
+
+    function selectedLearningNote() {
+      return selectedLearningId ? learningNotes.find(x => x.id === selectedLearningId) : null;
+    }
+
+    function renderLearningNotes() {
+      const notes = learningNotes.slice().sort((a,b) => String(b.date || "").localeCompare(String(a.date || "")));
+      if (!selectedLearningId && notes.length) selectedLearningId = notes[0].id;
+      $("learningList").innerHTML = notes.length ? notes.map(n => `
+        <div class="strategy-item ${n.id === selectedLearningId ? "active" : ""}" data-learning="${n.id}">
+          <h4>${escapeHtml(n.title || "未命名学习记录")}</h4>
+          <p>${escapeHtml(n.strategyName || "未分类")} · ${escapeHtml(n.date || "")}</p>
+        </div>
+      `).join("") : `<div class="empty">还没有学习记录。点击右上角「＋」开始写。</div>`;
+      document.querySelectorAll("[data-learning]").forEach(el => el.addEventListener("click", () => {
+        selectedLearningId = el.dataset.learning;
+        fillLearningForm();
+        renderLearningNotes();
+      }));
+      fillLearningForm();
+    }
+
+    function fillLearningStrategyOptions(selected = "") {
+      const options = learningStrategies();
+      $("learningStrategy").innerHTML = `<option value="">选择大策略</option>` + options.map(name => `<option ${name === selected ? "selected" : ""}>${escapeHtml(name)}</option>`).join("");
+    }
+
+    function fillLearningForm(note = null) {
+      const n = note || selectedLearningNote() || {};
+      fillLearningStrategyOptions(n.strategyName || "");
+      $("learningId").value = n.id || "";
+      $("learningDate").value = n.date || new Date().toISOString().slice(0, 10);
+      $("learningStrategyCustom").value = "";
+      $("learningTitle").value = n.title || "";
+      $("learningThoughts").value = n.thoughts || "";
+      $("learningReflection").value = n.reflection || "";
+      $("learningKnowledge").value = n.knowledge || "";
+      $("learningCautions").value = n.cautions || "";
+      renderLearningAnalysis(n);
+    }
+
+    function collectLearningText(n = {}) {
+      return [n.strategyName, n.title, n.thoughts, n.reflection, n.knowledge, n.cautions].filter(Boolean).join("\n");
+    }
+
+    function renderLearningAnalysis(n = {}) {
+      const keys = extractManualKeywords(collectLearningText(n));
+      $("learningKeywordCloud").innerHTML = keys.length
+        ? keys.map((k, i) => `<span class="pill ${["blue","violet","green"][i % 3]}">${escapeHtml(k)}</span>`).join("")
+        : `<span class="small-note">写入内容后这里会提炼关键词。</span>`;
+      $("learningCoreNote").textContent = n.strategyName
+        ? `分类：${n.strategyName}。复习重点：${keys.slice(0, 8).join(" / ") || "等待更多内容"}`
+        : "先选择一个大策略分类，再写新的思考、反思、知识和注意点。";
+      const cards = [
+        ["思考", n.thoughts],
+        ["反思", n.reflection],
+        ["新知识", n.knowledge],
+        ["格外注意", n.cautions]
+      ];
+      $("learningReviewCards").innerHTML = cards.map(([h, text]) => `<div class="ai-card"><h4>${h}</h4><p>${escapeHtml(String(text || "暂无").slice(0, 180))}</p></div>`).join("");
+    }
+
+    function draftLearningNote() {
+      const custom = $("learningStrategyCustom").value.trim();
+      return {
+        id: $("learningId").value || "L" + Date.now(),
+        date: $("learningDate").value || new Date().toISOString().slice(0, 10),
+        strategyName: custom || $("learningStrategy").value,
+        title: $("learningTitle").value.trim(),
+        thoughts: $("learningThoughts").value.trim(),
+        reflection: $("learningReflection").value.trim(),
+        knowledge: $("learningKnowledge").value.trim(),
+        cautions: $("learningCautions").value.trim()
+      };
+    }
+
+    function saveLearningForm() {
+      const n = draftLearningNote();
+      if (!n.strategyName && !n.title) return;
+      const i = learningNotes.findIndex(x => x.id === n.id);
+      if (i >= 0) learningNotes[i] = n; else learningNotes.push(n);
+      selectedLearningId = n.id;
+      saveAll();
+      renderLearningNotes();
+      renderFilters();
+    }
+
+    async function deleteLearningForm() {
+      const id = $("learningId").value;
+      if (!id) return;
+      learningNotes = learningNotes.filter(x => x.id !== id);
+      await deleteCloudLearningNote(id);
+      selectedLearningId = learningNotes[0]?.id || "";
+      saveAll();
+      renderLearningNotes();
+    }
+
     function renderReview(list) {
       const s = calcStats(list);
       const byStrategy = aggregateBy(list, t => t.strategy);
@@ -2898,6 +3079,7 @@
         kline:["K线图","当日 K 线与进出场标记"],
         daily:["每日/每周","日度总结与周统计"],
         strategies:["策略手册","策略长文、关键词和执行规则"],
+        learning:["策略学习","新思考、复盘反思、新知识和交易前提醒"],
         analysis:["核心分析","全部交易的风险、质量、纪律和评分"],
         review:["AI复盘","基于当前筛选数据的复盘结论"]
       };
@@ -2920,6 +3102,7 @@
       drawCharts(list);
       renderKline();
       renderManuals();
+      renderLearningNotes();
       renderReview(list);
       renderRoadmap();
     }
@@ -2981,6 +3164,11 @@
         invalid: $("manualInvalid").value
       });
     }));
+    $("newLearning").addEventListener("click", () => { selectedLearningId = "__new__"; renderLearningNotes(); fillLearningForm({}); });
+    $("saveLearning").addEventListener("click", saveLearningForm);
+    $("deleteLearning").addEventListener("click", deleteLearningForm);
+    ["learningDate","learningStrategy","learningStrategyCustom","learningTitle","learningThoughts","learningReflection","learningKnowledge","learningCautions"].forEach(id => $(id).addEventListener("input", () => renderLearningAnalysis(draftLearningNote())));
+    $("learningStrategy").addEventListener("change", () => renderLearningAnalysis(draftLearningNote()));
     $("newStrategy").addEventListener("click", () => { selectedManualId = ""; fillManualForm(); renderManuals(); });
     $("runReview").addEventListener("click", () => renderReview(filteredTrades()));
     $("exportCsv").addEventListener("click", exportCsv);

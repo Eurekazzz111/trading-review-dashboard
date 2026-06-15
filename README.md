@@ -31,6 +31,7 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - 按策略、盘段、方向、纪律执行统计
 - 入场信号、入场点位选择原因记录；规则违规标签和情绪原因记录
 - 破规则由人工手动标记（不再按执行评分自动推断），破规则理由写在备注里
+- 策略学习页：按大策略分类记录大段思考、反思、新知识和格外注意点，方便持续复习
 - 响应式布局，手机和平板可用；数据表数字右对齐、等宽对齐
 - 策略手册、核心分析、AI 复盘提示
 - Supabase 邮箱登录和云端同步
@@ -100,7 +101,7 @@ K 线数据保存方式：
 当前版本支持两种模式：
 
 - 未登录：交易数据保存在当前浏览器的 `localStorage`
-- 邮箱登录后：交易、策略手册、设置、K 线数据会同步到 Supabase 云端数据库
+- 邮箱登录后：交易、策略手册、策略学习记录、设置、K 线数据会同步到 Supabase 云端数据库
 
 注意：
 
@@ -113,7 +114,7 @@ K 线数据保存方式：
 1. 在 Supabase 创建项目
 2. 打开 `SQL Editor`
 3. 粘贴并运行 `supabase-schema.sql`
-   - 如果之前已经运行过旧版本，也可以再次运行新版 SQL；它使用 `if not exists` 和 `drop policy if exists`，用于补齐新增的 `kline_days` 表。
+   - 如果之前已经运行过旧版本，也可以再次运行新版 SQL；它使用 `if not exists` 和 `drop policy if exists`，用于补齐新增的 `kline_days`、`strategy_learning_notes` 等表。
 4. 打开 `Authentication` -> `URL Configuration`
 5. Site URL 设置为：
 
