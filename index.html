@@ -1376,6 +1376,7 @@
     const KLINE_DATA = {};
     const KLINE_KEY = "trading-review-kline-v1";
     function loadKlineImported() { try { return JSON.parse(localStorage.getItem(KLINE_KEY)) || {}; } catch { return {}; } }
+    function saveKlineLocalOnly() { localStorage.setItem(KLINE_KEY, JSON.stringify(klineStore)); }
     let klineStore = Object.assign({}, KLINE_DATA, loadKlineImported());
     let klineDay = "";
 
@@ -1473,23 +1474,28 @@
     async function loadCloudData() {
       if (!currentUser || !supabaseClient) return;
       setAuthStatus(`同步云端数据：${currentUser.email}`);
-      const [tradeRes, manualRes, settingsRes] = await Promise.all([
+      const [tradeRes, manualRes, settingsRes, klineRes] = await Promise.all([
         supabaseClient.from("trades").select("id,data").order("trade_date", {ascending:true}),
         supabaseClient.from("strategy_manuals").select("id,data").order("created_at", {ascending:true}),
-        supabaseClient.from("user_settings").select("data").maybeSingle()
+        supabaseClient.from("user_settings").select("data").maybeSingle(),
+        supabaseClient.from("kline_days").select("day,candles").order("day", {ascending:true})
       ]);
-      const firstError = tradeRes.error || manualRes.error || settingsRes.error;
+      const firstError = tradeRes.error || manualRes.error || settingsRes.error || klineRes.error;
       if (firstError) {
         cloudReady = false;
         setAuthStatus(`云端表未就绪：${firstError.message}`);
         return;
       }
       const cloudTrades = (tradeRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
+      const cloudKlines = Object.fromEntries((klineRes.data || []).map(row => [row.day, row.candles || []]));
+      const cloudKlineDays = Object.keys(cloudKlines);
       if (cloudTrades.length || !trades.length) trades = cloudTrades;
       if (manualRes.data?.length) manuals = manualRes.data.map(row => ({id: row.id, ...(row.data || {})}));
       if (settingsRes.data?.data) settings = {...settings, ...settingsRes.data.data};
+      if (cloudKlineDays.length || !Object.keys(klineStore).length) klineStore = Object.assign({}, KLINE_DATA, cloudKlines);
       cloudReady = true;
       if (!cloudTrades.length && trades.length) await saveCloudData();
+      if (!cloudKlineDays.length && Object.keys(klineStore).length) await saveCloudKlineData();
       saveLocalOnly();
       render();
       setAuthStatus(`云端已同步：${currentUser.email}`);
@@ -1499,6 +1505,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      saveKlineLocalOnly();
     }
 
     async function saveCloudData() {
@@ -1522,6 +1529,20 @@
       const results = await Promise.all(jobs);
       const error = results.find(r => r.error)?.error;
       setAuthStatus(error ? `云端保存失败：${error.message}` : `云端已保存：${currentUser.email}`);
+    }
+
+    async function saveCloudKlineData() {
+      if (!currentUser || !supabaseClient || !cloudReady) return;
+      const rows = Object.entries(klineStore)
+        .filter(([, candles]) => Array.isArray(candles) && candles.length)
+        .map(([day, candles]) => ({
+          user_id: currentUser.id,
+          day,
+          candles
+        }));
+      if (!rows.length) return;
+      const {error} = await supabaseClient.from("kline_days").upsert(rows, {onConflict:"user_id,day"});
+      setAuthStatus(error ? `K线云端保存失败：${error.message}` : `K线云端已保存：${currentUser.email}`);
     }
 
     async function clearCloudTrades() {
@@ -2910,15 +2931,16 @@
     $("klineImport").addEventListener("change", e => {
       const file = e.target.files[0]; if (!file) return;
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
           const parsed = parseAtasCsv(reader.result);
           const dayKeys = Object.keys(parsed).sort();
           if (!dayKeys.length) { $("klineImportNote").textContent = "未解析到 K 线数据，请检查是否为 ATAS 导出格式。"; return; }
           const imported = loadKlineImported();
           Object.assign(imported, parsed);
-          localStorage.setItem(KLINE_KEY, JSON.stringify(imported));
           klineStore = Object.assign({}, KLINE_DATA, imported);
+          saveKlineLocalOnly();
+          if (currentUser && cloudReady) await saveCloudKlineData();
           klineDay = dayKeys[dayKeys.length - 1];
           $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天：${dayKeys.join("、")}`;
           renderKline();
