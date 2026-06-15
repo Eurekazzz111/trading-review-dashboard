@@ -24,11 +24,14 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - 交易日志录入和 CSV 导入/导出
 - 自动计算点数、美元盈亏、持仓时间、Risk/Reward
 - NQ 默认每点 20 美元，MNQ 默认每点 2 美元，ES 默认每点 50 美元，MES 默认每点 5 美元
-- Profit Factor、Win Rate、数学期望、Average Win / Average Loss
+- Profit Factor、Win Rate、数学期望、Average Win / Average Loss（亏损统一显示为红色）
 - 每日总记录、周统计、月历统计
 - 累计盈亏曲线、每日盈亏柱状图
+- K 线图：导入 ATAS 当日 K 线 CSV，按进出场时间和点位自动标注交易，进出场按顺序编号 ①②③，下方按顺序列出当日每笔交易（策略、入场信号、入场点位选择原因、备注）
 - 按策略、盘段、方向、纪律执行统计
-- 规则违规标签和情绪原因记录
+- 入场信号、入场点位选择原因记录；规则违规标签和情绪原因记录
+- 破规则由人工手动标记（不再按执行评分自动推断），破规则理由写在备注里
+- 响应式布局，手机和平板可用；数据表数字右对齐、等宽对齐
 - 策略手册、核心分析、AI 复盘提示
 - Supabase 邮箱登录和云端同步
 
@@ -37,13 +40,13 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 推荐字段：
 
 ```csv
-id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entry,initialStop,exit,riskReward,pnl,qty,grade,ruleBroken,ruleViolation,emotionCause,notes
+id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entry,initialStop,exit,riskReward,pnl,qty,grade,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
 ```
 
 示例：
 
 ```csv
-T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,22050,2.50,2000,2,5,false,,,大周期关键位上方回踩不破，按计划执行
+T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,22050,2.50,2000,2,5,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
 ```
 
 字段说明：
@@ -62,10 +65,24 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,220
 - `pnl`：实际美元盈亏，可直接填写真实结果
 - `qty`：合约数量
 - `grade`：执行评分
-- `ruleBroken`：是否破规则，`true` 或 `false`
-- `ruleViolation`：违规标签
+- `ruleBroken`：是否破规则，`true` 或 `false`，由人工手动标记
+- `ruleViolation`：违规标签（可选）
 - `emotionCause`：情绪原因
-- `notes`：备注
+- `entrySignal`：入场信号（如 5m 收回 / 吸收反转 / 失败突破）
+- `entryReason`：入场点位选择原因（结构 / 关键位 / 订单流依据）
+- `notes`：备注；破规则时在此写明理由
+
+## K 线图与进出场标记
+
+K 线图页面用来把每笔交易画到当天的行情上复盘。
+
+1. 在交易日志或 CSV 里录入当天的交易（含入场/出场时间、入场/出场点位）。
+2. 在 K 线图页面点「导入当日 K 线 (ATAS CSV)」，导入从 ATAS 导出的当日 K 线文件。
+3. 选择日期后，当天的交易会按进出场时间和点位自动画在 K 线上，进出场按顺序编号 ①②③；图下方按相同顺序列出每笔交易的策略、入场信号、入场点位选择原因和备注。
+
+ATAS 导出格式为 `年-日-月;开;高;低;收`（分号分隔，可含多天，无表头）。导入的 K 线数据保存在浏览器本机（`localStorage`，key 为 `trading-review-kline-v1`）。
+
+注意：K 线时间戳的时区必须和交易记录里的进出场时间一致（建议都用美东），否则标记会落在错误的 K 线上。
 
 ## 缺失数据处理
 

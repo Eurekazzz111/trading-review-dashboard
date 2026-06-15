@@ -29,7 +29,7 @@
       margin: 0;
       background: var(--bg);
       color: var(--ink);
-      min-width: 1120px;
+      font-variant-numeric: tabular-nums;
     }
 
     button, input, select, textarea {
@@ -373,6 +373,25 @@
 
     .half canvas { height: 220px; }
 
+    .kline-wrap canvas { height: 440px; }
+    .kline-days { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .kline-days button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .kline-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .kline-legend i { font-style: normal; font-weight: 800; }
+    .kline-trades { display: grid; gap: 10px; }
+    .kt-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: start; }
+    .kt-no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; background: var(--ink); }
+    .kt-no.long { background: var(--green); } .kt-no.short { background: var(--red); }
+    .kt-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }
+    .kt-head .kt-strat { font-weight: 800; font-size: 14px; }
+    .kt-field { font-size: 12.5px; line-height: 1.5; }
+    .kt-field b { color: #5a615c; font-weight: 700; margin-right: 5px; }
+    .kt-field span.empty { color: #b7b1a4; }
+    .kt-right { text-align: right; white-space: nowrap; font-weight: 800; }
+    .kt-right .small-note { font-weight: 400; }
+    .kt-empty { color: var(--muted); font-size: 13px; }
+    @media (max-width: 560px) { .kt-card { grid-template-columns: 26px 1fr; } .kt-right { grid-column: 2; text-align: left; } }
+
     .tables {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -404,6 +423,7 @@
     }
 
     tr:hover td { background: #f8f5ef; }
+    th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
     .table-wrap {
       overflow: hidden;
@@ -856,12 +876,35 @@
     }
 
     @media (max-width: 1200px) {
-      body { min-width: 980px; }
-      .kpis { grid-template-columns: repeat(3, 1fr); }
+      .kpis { grid-template-columns: repeat(4, 1fr); }
       .grid { grid-template-columns: 1fr; }
       .dashboard-main { grid-template-columns: 1fr; }
       .manual-layout { grid-template-columns: 1fr; }
       .analysis-grid, .score-layout { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .side { position: static; height: auto; overflow: visible; border-right: 0; border-bottom: 1px solid #d2cabe; padding: 14px 16px; }
+      .nav { grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; padding-bottom: 4px; }
+      .nav button { width: auto; white-space: nowrap; }
+      .filters { grid-template-columns: repeat(2, 1fr); }
+      .tables { grid-template-columns: 1fr; }
+      .content { padding: 14px 14px 28px; }
+      .topbar { flex-wrap: wrap; }
+      .kpis { grid-template-columns: repeat(3, 1fr); }
+      .form-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .calendar-grid { grid-template-columns: repeat(7, minmax(40px, 1fr)); }
+      .calendar-wrap { min-height: 0; }
+    }
+    @media (max-width: 560px) {
+      .kpis { grid-template-columns: 1fr 1fr; }
+      .filters { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr 1fr; }
+      .title h2 { font-size: 18px; }
+      .actions { flex-wrap: wrap; }
+      canvas { height: 220px; }
+      .kline-wrap canvas { height: 300px; }
     }
   </style>
 </head>
@@ -879,6 +922,7 @@
       <nav class="nav" id="nav">
         <button class="active" data-view="dashboard">▣ 总览</button>
         <button data-view="trades">≡ 交易日志</button>
+        <button data-view="kline">◔ K线图</button>
         <button data-view="daily">◫ 每日/每周</button>
         <button data-view="strategies">◇ 策略手册</button>
         <button data-view="analysis">◎ 核心分析</button>
@@ -1066,7 +1110,9 @@
             <div class="field"><label>规则执行</label><select id="ruleBroken"><option value="false">守规则</option><option value="true">破规则</option></select></div>
             <div class="field"><label>违规标签</label><select id="ruleViolation"><option></option><option>抢跑</option><option>追单</option><option>逆势</option><option>未等确认</option><option>超风险</option><option>提前离场</option></select></div>
             <div class="field"><label>情绪原因</label><select id="emotionCause"><option></option><option>FOMO</option><option>复仇交易</option><option>害怕亏损</option><option>过度自信</option><option>犹豫</option><option>疲劳</option></select></div>
-            <div class="field full"><label>备注</label><textarea id="notes"></textarea></div>
+            <div class="field wide"><label>入场信号</label><input id="entrySignal" placeholder="如：5m 收回 / 吸收反转 / 失败突破回区间"></div>
+            <div class="field full"><label>入场点位选择原因</label><input id="entryReason" placeholder="为什么在这个点位进场：结构 / 关键位 / 订单流依据"></div>
+            <div class="field full"><label>备注（破规则时在此写明理由）</label><textarea id="notes" placeholder="例如：午盘逆势抢反弹，没等 5m 确认"></textarea></div>
           </div>
         </section>
         <section class="panel" style="margin-top:14px;">
@@ -1079,6 +1125,39 @@
               <table id="tradeTable"></table>
             </div>
           </div>
+        </section>
+      </section>
+
+      <section id="kline" class="view">
+        <section class="panel kline-wrap">
+          <div class="panel-head">
+            <h3>K线图 + 进出场标记</h3>
+            <span class="meta" id="klineMeta"></span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+            <label class="file-btn" style="display:inline-flex;align-items:center;height:34px;padding:0 11px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:var(--panel);">
+              ＋ 导入当日K线 (ATAS CSV)
+              <input type="file" id="klineImport" accept=".csv,text/csv" style="display:none;">
+            </label>
+            <span class="small-note" id="klineImportNote">支持 ATAS 导出格式：年-日-月;开;高;低;收（分号分隔，可含多天）</span>
+          </div>
+          <div class="kline-days" id="klineDays"></div>
+          <canvas id="klineChart"></canvas>
+          <div class="kline-legend">
+            <span><i style="color:#148a5b">▲</i> 多单进场</span>
+            <span><i style="color:#bd3b3b">▼</i> 空单进场</span>
+            <span><i>◆</i> 出场</span>
+            <span><i style="color:#148a5b">—</i> 盈利连线</span>
+            <span><i style="color:#bd3b3b">—</i> 亏损连线</span>
+            <span class="small-note">进出场标记按当日交易顺序标注 ①②③，并落在对应 K 线上</span>
+          </div>
+        </section>
+        <section class="panel" style="margin-top:14px;">
+          <div class="panel-head">
+            <h3>当日交易记录（按顺序）</h3>
+            <span class="meta" id="klineTradeMeta"></span>
+          </div>
+          <div class="kline-trades" id="klineTradeList"></div>
         </section>
       </section>
 
@@ -1293,6 +1372,12 @@
       {id:"M2",name:"Failed Break",market:"NQ / ES",status:"Active",reflection:"突破失败不是立刻反手，重点是看价格是否重新接受回区间，失败方向是否被套，回踩有没有继续被吸收。",keywords:"突破失败, 回区间, 套单, 回踩, 吸收",entry:"突破失败并重新回到区间内，等待失败方向确认。",exit:"回到区间中轴或对侧流动性先减仓。",invalid:"突破方向重新站稳，失败结构消失。"},
       {id:"M3",name:"VWAP Rejection",market:"ES / NQ",status:"Watch",reflection:"VWAP 拒绝需要配合位置，单独碰到 VWAP 不是交易理由。要看测试后的接受失败、主动攻击和风险位置。",keywords:"VWAP, 位置, 拒绝, 主动攻击, 风险",entry:"价格测试 VWAP 后被拒绝，配合低风险止损。",exit:"到前低/前高或动能衰减出场。",invalid:"VWAP 被有效站上/跌破并接受。"}
     ];
+
+    const KLINE_DATA = {};
+    const KLINE_KEY = "trading-review-kline-v1";
+    function loadKlineImported() { try { return JSON.parse(localStorage.getItem(KLINE_KEY)) || {}; } catch { return {}; } }
+    let klineStore = Object.assign({}, KLINE_DATA, loadKlineImported());
+    let klineDay = "";
 
     let trades = loadTrades();
     let manuals = loadManuals();
@@ -1540,20 +1625,13 @@
       }
       t.holdingMinutes = toNum(t.holdingMinutes) ?? minutesBetween(t.date, t.entryTime, t.exitTime);
       t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
-      t.ruleBroken = t.ruleBroken === true || t.ruleBroken === "true" || t.ruleBroken === 1 || t.ruleBroken === "1" || (!("ruleBroken" in raw) && Number(t.grade || 0) > 0 && Number(t.grade || 0) <= 2);
-      t.ruleViolation = t.ruleViolation || (t.ruleBroken ? inferRuleViolation(t.notes) : "");
+      t.ruleBroken = raw.ruleBroken === true || raw.ruleBroken === "true" || raw.ruleBroken === 1 || raw.ruleBroken === "1";
+      t.ruleViolation = t.ruleViolation || "";
       t.emotionCause = t.emotionCause || "";
       return t;
     }
 
-    function inferRuleViolation(notes) {
-      const text = String(notes || "").toLowerCase();
-      if (text.includes("chase") || text.includes("late")) return "追单";
-      if (text.includes("counter") || text.includes("fade")) return "逆势";
-      if (text.includes("confirmation") || text.includes("confirm")) return "未等确认";
-      if (text.includes("early")) return "提前离场";
-      return "";
-    }
+    // 是否破规则完全由用户手动标记，破规则的理由写在备注里，代码不再自动推断。
 
     function filteredTrades() {
       const from = $("fromDate").value;
@@ -1684,7 +1762,7 @@
         ["Profit Factor", pf, `${money(s.grossWin)} / ${money(-s.grossLossAbs)}`, s.profitFactor >= 1.5 ? "positive" : s.profitFactor < 1 ? "negative" : "neutral", "ring", clamp01((Number.isFinite(s.profitFactor) ? s.profitFactor : 3) / 3) * 100],
         ["Win Rate", pct(s.winRate), `${s.wins}W / ${s.losses}L`, s.winRate >= .5 ? "positive" : "neutral", "ring", s.winRate * 100],
         ["数学期望", money(s.expectancy), "每笔平均", pnlClass(s.expectancy), "bar", clamp01((s.expectancy + Math.max(1, s.avgWin)) / Math.max(1, s.avgWin * 2)) * 100],
-        ["Avg Win / Avg Loss", `${money(s.avgWin)} / ${money(-s.avgLoss)}`, `盈亏比 ${s.payoff === Infinity ? "∞" : num(s.payoff)}`, s.payoff >= 1.5 ? "positive" : "neutral", "bars", clamp01(s.payoff / 3) * 100],
+        ["Avg Win / Avg Loss", `<span class="positive">${money(s.avgWin)}</span> / <span class="negative">${money(-s.avgLoss)}</span>`, `盈亏比 ${s.payoff === Infinity ? "∞" : num(s.payoff)}`, "", "bars", clamp01(s.payoff / 3) * 100],
         ["Max Drawdown", money(s.maxDrawdown), `平均持仓 ${num(s.avgHold,0)}m`, s.maxDrawdown < 0 ? "negative" : "neutral", "ring", scoreDrawdown(s)]
       ];
       $("kpis").innerHTML = items.map(([label, value, sub, cls, visual, pctValue]) => `
@@ -1722,17 +1800,17 @@
     }
 
     function renderAggTable(id, rows, title) {
-      const head = `<thead><tr><th>${title}</th><th>交易</th><th>净盈亏</th><th>点数</th><th>Win</th><th>PF</th><th>期望</th></tr></thead>`;
+      const head = `<thead><tr><th>${title}</th><th class="num">交易</th><th class="num">净盈亏</th><th class="num">点数</th><th class="num">Win</th><th class="num">PF</th><th class="num">期望</th></tr></thead>`;
       const body = rows.length ? rows.map(r => {
         const s = r.stats;
         return `<tr>
           <td><span class="pill blue">${escapeHtml(r.key)}</span></td>
-          <td>${s.trades}</td>
-          <td class="${pnlClass(s.total)}">${money(s.total)}</td>
-          <td class="${pnlClass(s.totalPoints)}">${num(s.totalPoints, 1)}</td>
-          <td>${pct(s.winRate)}</td>
-          <td>${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td>
-          <td class="${pnlClass(s.expectancy)}">${money(s.expectancy)}</td>
+          <td class="num">${s.trades}</td>
+          <td class="num ${pnlClass(s.total)}">${money(s.total)}</td>
+          <td class="num ${pnlClass(s.totalPoints)}">${num(s.totalPoints, 1)}</td>
+          <td class="num">${pct(s.winRate)}</td>
+          <td class="num">${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td>
+          <td class="num ${pnlClass(s.expectancy)}">${money(s.expectancy)}</td>
         </tr>`;
       }).join("") : `<tr><td colspan="7" class="empty">无记录</td></tr>`;
       $(id).innerHTML = head + `<tbody>${body}</tbody>`;
@@ -1742,7 +1820,7 @@
       $("tradeCount").textContent = list.length + " 笔";
       const head = `<thead><tr>
         <th>日期</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th>
-        <th>入场</th><th>Initial Stop</th><th>出场</th><th>点数</th><th>盈亏</th><th>Risk/Reward</th><th>持仓</th><th>纪律</th><th>违规/情绪</th><th></th>
+        <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">出场</th><th class="num">点数</th><th class="num">盈亏</th><th class="num">Risk/Reward</th><th class="num">持仓</th><th>纪律</th><th>违规/情绪</th><th></th>
       </tr></thead>`;
       const body = list.length ? list.map(t => `<tr>
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
@@ -1751,13 +1829,13 @@
         <td>${escapeHtml(t.symbol)}</td>
         <td><span class="pill ${t.side === "Long" ? "green" : "red"}">${escapeHtml(t.side)}</span></td>
         <td>${escapeHtml(t.strategy)}</td>
-        <td>${num(t.entry, 2)}</td>
-        <td>${num(t.initialStop, 2)}</td>
-        <td>${num(t.exit, 2)}</td>
-        <td class="${pnlClass(t.points)}">${num(t.points, 1)}</td>
-        <td class="${pnlClass(t.pnl)}">${money(t.pnl)}</td>
-        <td class="${pnlClass(t.riskReward)}">${num(t.riskReward)}</td>
-        <td>${num(t.holdingMinutes, 0)}m</td>
+        <td class="num">${num(t.entry, 2)}</td>
+        <td class="num">${num(t.initialStop, 2)}</td>
+        <td class="num">${num(t.exit, 2)}</td>
+        <td class="num ${pnlClass(t.points)}">${num(t.points, 1)}</td>
+        <td class="num ${pnlClass(t.pnl)}">${money(t.pnl)}</td>
+        <td class="num ${pnlClass(t.riskReward)}">${num(t.riskReward)}</td>
+        <td class="num">${num(t.holdingMinutes, 0)}m</td>
         <td><span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span></td>
         <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
         <td><button class="icon" data-edit="${t.id}">✎</button></td>
@@ -1768,19 +1846,19 @@
 
     function renderDailyWeekly(list) {
       const daily = dayRows(list);
-      $("dailyTable").innerHTML = `<thead><tr><th>日期</th><th>总盈亏</th><th>点数</th><th>交易</th><th>Win</th><th>PF</th><th>时段</th><th>主策略</th></tr></thead><tbody>` +
+      $("dailyTable").innerHTML = `<thead><tr><th>日期</th><th class="num">总盈亏</th><th class="num">点数</th><th class="num">交易</th><th class="num">Win</th><th class="num">PF</th><th>时段</th><th>主策略</th></tr></thead><tbody>` +
         (daily.length ? daily.map(d => `<tr>
-          <td>${d.key}</td><td class="${pnlClass(d.stats.total)}">${money(d.stats.total)}</td><td class="${pnlClass(d.stats.totalPoints)}">${num(d.stats.totalPoints,1)}</td><td>${d.stats.trades}</td>
-          <td>${pct(d.stats.winRate)}</td><td>${d.stats.profitFactor === Infinity ? "∞" : num(d.stats.profitFactor)}</td>
+          <td>${d.key}</td><td class="num ${pnlClass(d.stats.total)}">${money(d.stats.total)}</td><td class="num ${pnlClass(d.stats.totalPoints)}">${num(d.stats.totalPoints,1)}</td><td class="num">${d.stats.trades}</td>
+          <td class="num">${pct(d.stats.winRate)}</td><td class="num">${d.stats.profitFactor === Infinity ? "∞" : num(d.stats.profitFactor)}</td>
           <td>${escapeHtml(d.sessions)}</td><td>${escapeHtml(d.best)}</td>
         </tr>`).join("") : `<tr><td colspan="8" class="empty">无记录</td></tr>`) + `</tbody>`;
 
       const weekly = aggregateBy(list, t => weekOf(t.date)).sort((a,b) => a.key.localeCompare(b.key));
-      $("weeklyTable").innerHTML = `<thead><tr><th>周</th><th>总盈亏</th><th>点数</th><th>交易</th><th>Win</th><th>PF</th><th>期望</th><th>Max DD</th></tr></thead><tbody>` +
+      $("weeklyTable").innerHTML = `<thead><tr><th>周</th><th class="num">总盈亏</th><th class="num">点数</th><th class="num">交易</th><th class="num">Win</th><th class="num">PF</th><th class="num">期望</th><th class="num">Max DD</th></tr></thead><tbody>` +
         (weekly.length ? weekly.map(w => `<tr>
-          <td>${w.key}</td><td class="${pnlClass(w.stats.total)}">${money(w.stats.total)}</td><td class="${pnlClass(w.stats.totalPoints)}">${num(w.stats.totalPoints,1)}</td><td>${w.stats.trades}</td>
-          <td>${pct(w.stats.winRate)}</td><td>${w.stats.profitFactor === Infinity ? "∞" : num(w.stats.profitFactor)}</td>
-          <td class="${pnlClass(w.stats.expectancy)}">${money(w.stats.expectancy)}</td><td class="negative">${money(w.stats.maxDrawdown)}</td>
+          <td>${w.key}</td><td class="num ${pnlClass(w.stats.total)}">${money(w.stats.total)}</td><td class="num ${pnlClass(w.stats.totalPoints)}">${num(w.stats.totalPoints,1)}</td><td class="num">${w.stats.trades}</td>
+          <td class="num">${pct(w.stats.winRate)}</td><td class="num">${w.stats.profitFactor === Infinity ? "∞" : num(w.stats.profitFactor)}</td>
+          <td class="num ${pnlClass(w.stats.expectancy)}">${money(w.stats.expectancy)}</td><td class="num negative">${money(w.stats.maxDrawdown)}</td>
         </tr>`).join("") : `<tr><td colspan="8" class="empty">无记录</td></tr>`) + `</tbody>`;
     }
 
@@ -2200,6 +2278,168 @@
       installHover(c, rows.length, i => paint(i), () => paint());
     }
 
+    function renderKline() {
+      const days = Object.keys(klineStore).sort();
+      if (!days.length) { $("klineDays").innerHTML = `<span class="small-note">未内置 K 线数据。</span>`; return; }
+      if (!klineDay || !klineStore[klineDay]) klineDay = days[days.length - 1];
+      $("klineDays").innerHTML = days.map(d => `<button data-kday="${d}" class="${d === klineDay ? "on" : ""}">${d.slice(5)}</button>`).join("");
+      document.querySelectorAll("[data-kday]").forEach(b => b.onclick = () => { klineDay = b.dataset.kday; renderKline(); });
+      drawKline();
+    }
+
+    function drawKline() {
+      const c = $("klineChart"), ctx = c.getContext("2d");
+      const candles = klineStore[klineDay] || [];
+      const dayTrades = filteredTrades().filter(t => t.date === klineDay).map(derivedTrade)
+        .sort((a, b) => String(a.entryTime).localeCompare(String(b.entryTime)));
+      $("klineMeta").textContent = candles.length ? `${klineDay} · ${candles.length} 根 (5m) · ${dayTrades.length} 笔标记` : "";
+      renderKlineTradeList(dayTrades);
+      const padL = 48, padR = 16, padT = 16, padB = 28;
+      const idxForTime = tm => {
+        if (!tm) return -1;
+        let idx = -1;
+        for (let i = 0; i < candles.length; i++) { if (candles[i][0] <= tm) idx = i; else break; }
+        return idx < 0 ? 0 : idx;
+      };
+      const paint = (hoverIndex = -1) => {
+        clearCanvas(c, ctx);
+        drawChartBackground(ctx, c, "");
+        if (!candles.length) {
+          ctx.fillStyle = "#9a958a"; ctx.font = "13px Inter, sans-serif";
+          ctx.fillText("这一天没有内置 K 线数据", padL, c.height / 2);
+          return;
+        }
+        let lo = Math.min(...candles.map(b => b[3]));
+        let hi = Math.max(...candles.map(b => b[2]));
+        dayTrades.forEach(t => [t.entry, t.exit].forEach(v => { const n = Number(v); if (isFinite(n) && n) { lo = Math.min(lo, n); hi = Math.max(hi, n); } }));
+        const span = (hi - lo) || 1; lo -= span * 0.04; hi += span * 0.04;
+        const n = candles.length;
+        const plotW = c.width - padL - padR;
+        const step = plotW / n;
+        const bw = Math.max(2, step * 0.6);
+        const mapX = i => padL + i * step + step / 2;
+        const mapY = v => padT + (hi - v) / (hi - lo) * (c.height - padT - padB);
+        // grid + y labels
+        ctx.font = "12px Inter, sans-serif";
+        for (let g = 0; g <= 4; g++) {
+          const v = lo + (hi - lo) * g / 4, y = mapY(v);
+          ctx.strokeStyle = "#ece7dd"; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(c.width - padR, y); ctx.stroke();
+          ctx.fillStyle = "#6d746f"; ctx.fillText(v.toFixed(0), 6, y + 4);
+        }
+        // x time labels
+        const ticks = 8;
+        for (let k = 0; k <= ticks; k++) {
+          const i = Math.round((n - 1) * k / ticks), x = mapX(i);
+          ctx.fillStyle = "#9a958a"; ctx.fillText(candles[i][0], x - 14, c.height - 8);
+        }
+        // candles
+        candles.forEach((b, i) => {
+          const o = b[1], h = b[2], l = b[3], cl = b[4], x = mapX(i), up = cl >= o;
+          ctx.strokeStyle = up ? "#148a5b" : "#bd3b3b";
+          ctx.fillStyle = up ? "#43bf91" : "#f15d68";
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x, mapY(h)); ctx.lineTo(x, mapY(l)); ctx.stroke();
+          const yTop = mapY(Math.max(o, cl)), bh = Math.max(1, Math.abs(mapY(o) - mapY(cl)));
+          ctx.fillRect(x - bw / 2, yTop, bw, bh);
+        });
+        // trade overlay
+        dayTrades.forEach((t, oi) => {
+          const entry = Number(t.entry); if (!isFinite(entry) || !entry) return;
+          const ei = idxForTime(t.entryTime), ex = mapX(ei), ey = mapY(entry);
+          const win = Number(t.pnl) >= 0, lc = win ? "#148a5b" : "#bd3b3b";
+          const exit = Number(t.exit);
+          if (isFinite(exit) && exit) {
+            const xi = idxForTime(t.exitTime), xx = mapX(xi), xy = mapY(exit);
+            ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = lc; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(xx, xy); ctx.stroke(); ctx.restore();
+            ctx.save(); ctx.translate(xx, xy); ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = "#fbfaf7"; ctx.strokeStyle = lc; ctx.lineWidth = 2;
+            ctx.fillRect(-5, -5, 10, 10); ctx.strokeRect(-5, -5, 10, 10); ctx.restore();
+            ctx.fillStyle = lc; ctx.font = "bold 12px Inter, sans-serif";
+            ctx.fillText(`${t.side === "Short" ? "空" : "多"} ${money(t.pnl)}`, xx + 8, xy + (win ? -8 : 16));
+          }
+          const ec = t.side === "Short" ? "#bd3b3b" : "#148a5b";
+          ctx.fillStyle = ec; ctx.strokeStyle = "#fbfaf7"; ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          if (t.side === "Short") { ctx.moveTo(ex, ey + 10); ctx.lineTo(ex - 6, ey - 2); ctx.lineTo(ex + 6, ey - 2); }
+          else { ctx.moveTo(ex, ey - 10); ctx.lineTo(ex - 6, ey + 2); ctx.lineTo(ex + 6, ey + 2); }
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          // 按顺序编号
+          const ny = t.side === "Short" ? ey + 23 : ey - 23;
+          ctx.fillStyle = ec; ctx.beginPath(); ctx.arc(ex, ny, 9, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#fff"; ctx.font = "bold 12px Inter, sans-serif";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(String(oi + 1), ex, ny);
+          ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+        });
+        if (hoverIndex >= 0 && hoverIndex < n) {
+          const b = candles[hoverIndex], x = mapX(hoverIndex);
+          drawHoverGuide(ctx, c, x, c.height - padB, mapY(b[4]), padL);
+          drawTooltip(ctx, c, x, mapY(b[2]), [`${klineDay} ${b[0]}`, `开 ${b[1].toFixed(2)}  高 ${b[2].toFixed(2)}`, `低 ${b[3].toFixed(2)}  收 ${b[4].toFixed(2)}`]);
+        }
+      };
+      paint();
+      c.onmousemove = e => {
+        if (!candles.length) return;
+        const rect = c.getBoundingClientRect(), rr = c.width / rect.width;
+        const x = (e.clientX - rect.left) * rr;
+        const plotW = c.width - padL - padR, step = plotW / candles.length;
+        let i = Math.round((x - padL) / step - 0.5);
+        i = Math.max(0, Math.min(candles.length - 1, i));
+        paint(i);
+      };
+      c.onmouseleave = () => paint();
+    }
+
+    function renderKlineTradeList(dayTrades) {
+      $("klineTradeMeta").textContent = `${klineDay} · ${dayTrades.length} 笔`;
+      if (!dayTrades.length) { $("klineTradeList").innerHTML = `<div class="kt-empty">这一天没有交易记录。在「交易日志」里录入当天的交易,这里会按顺序显示,并自动画到上方 K 线上。</div>`; return; }
+      const fld = (label, val) => `<div class="kt-field"><b>${label}</b>${val ? escapeHtml(val) : '<span class="empty">—</span>'}</div>`;
+      $("klineTradeList").innerHTML = dayTrades.map((t, i) => {
+        const long = t.side === "Long";
+        return `<div class="kt-card">
+          <div class="kt-no ${long ? "long" : "short"}">${i + 1}</div>
+          <div class="kt-body">
+            <div class="kt-head">
+              <span class="kt-strat">${escapeHtml(t.strategy || "未填策略")}</span>
+              <span class="pill ${long ? "green" : "red"}">${long ? "多 Long" : "空 Short"}</span>
+              <span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span>
+              <span class="small-note">${escapeHtml(t.entryTime || "")} → ${escapeHtml(t.exitTime || "")}</span>
+            </div>
+            ${fld("入场信号", t.entrySignal)}
+            ${fld("入场点位选择原因", t.entryReason)}
+            ${fld("备注", t.notes)}
+          </div>
+          <div class="kt-right">
+            <div class="${pnlClass(t.pnl)}">${money(t.pnl)}</div>
+            <div class="small-note">${num(t.entry, 2)} → ${num(t.exit, 2)}</div>
+            <div class="small-note">${num(t.points, 1)} pts · R ${num(t.riskReward)}</div>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function round2(n) { return Math.round(n * 100) / 100; }
+    function parseAtasCsv(text) {
+      const out = {};
+      String(text).split(/\r?\n/).forEach(line => {
+        line = line.trim(); if (!line) return;
+        let p = line.split(";"); if (p.length < 5) p = line.split(",");
+        if (p.length < 5) return;
+        const dt = p[0].trim().split(/\s+/);
+        const seg = dt[0].split("-"); if (seg.length !== 3) return;
+        const timePart = (dt[1] || "00:00:00").slice(0, 5);
+        const [y, dd, mm] = seg; // ATAS 导出为 年-日-月
+        const o = parseFloat(p[1]), h = parseFloat(p[2]), l = parseFloat(p[3]), cl = parseFloat(p[4]);
+        if (![o, h, l, cl].every(Number.isFinite)) return; // 跳过表头/坏行
+        const key = `${y}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+        (out[key] = out[key] || []).push([timePart, round2(o), round2(h), round2(l), round2(cl)]);
+      });
+      Object.values(out).forEach(arr => arr.sort((a, b) => a[0].localeCompare(b[0])));
+      return out;
+    }
+
     function clearCanvas(c, ctx) {
       const ratio = window.devicePixelRatio || 1;
       const w = c.clientWidth * ratio;
@@ -2420,7 +2660,7 @@
     function fillTradeForm(t = {}) {
       t = t.id ? derivedTrade(t) : t;
       manualDayPartTouched = Boolean(t.dayPart);
-      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","qty","points","pnl","riskReward","holdingMinutes","grade","ruleBroken","ruleViolation","emotionCause","notes"].forEach(id => {
+      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","qty","points","pnl","riskReward","holdingMinutes","grade","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
         const key = id === "tradeId" ? "id" : id;
         if ($(id)) $(id).value = t[key] ?? "";
       });
@@ -2484,6 +2724,8 @@
         ruleBroken: $("ruleBroken").value === "true",
         ruleViolation: $("ruleViolation").value,
         emotionCause: $("emotionCause").value,
+        entrySignal: $("entrySignal").value.trim(),
+        entryReason: $("entryReason").value.trim(),
         notes: $("notes").value.trim()
       };
       if (!t.date || !t.symbol || !t.strategy) return;
@@ -2556,6 +2798,8 @@
           ruleBroken: parseBool(o.ruleBroken || o.rule_broken || o["规则执行"] || o["破规则"]),
           ruleViolation: o.ruleViolation || o.rule_violation || o["违规标签"] || "",
           emotionCause: o.emotionCause || o.emotion_cause || o["情绪原因"] || "",
+          entrySignal: o.entrySignal || o.entry_signal || o["入场信号"] || "",
+          entryReason: o.entryReason || o.entry_reason || o["入场点位选择原因"] || o["入场原因"] || "",
           notes: o.notes || o["备注"] || ""
         };
       }).filter(t => t.date && t.symbol);
@@ -2575,7 +2819,7 @@
     }
 
     function exportCsv() {
-      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","riskReward","pnl","qty","grade","ruleBroken","ruleViolation","emotionCause","notes"];
+      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","riskReward","pnl","qty","grade","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
       const lines = [headers.join(",")].concat(trades.map(t => derivedTrade(t)).map(t => headers.map(h => csvCell(t[h])).join(",")));
       const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
       const url = URL.createObjectURL(blob);
@@ -2630,6 +2874,7 @@
       const names = {
         dashboard:["总览","交易表现、策略质量和执行偏差"],
         trades:["交易日志","入场/出场、时段和执行记录"],
+        kline:["K线图","当日 K 线与进出场标记"],
         daily:["每日/每周","日度总结与周统计"],
         strategies:["策略手册","策略长文、关键词和执行规则"],
         analysis:["核心分析","全部交易的风险、质量、纪律和评分"],
@@ -2641,6 +2886,7 @@
         const list = filteredTrades();
         drawCharts(list);
         if (id === "analysis") renderCoreAnalysis(list);
+        if (id === "kline") renderKline();
       }, 0);
     }
 
@@ -2651,6 +2897,7 @@
       renderTables(list);
       renderCoreAnalysis(list);
       drawCharts(list);
+      renderKline();
       renderManuals();
       renderReview(list);
       renderRoadmap();
@@ -2660,6 +2907,28 @@
     ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
     $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
     $("resetSample").addEventListener("click", async () => { trades = []; saveLocalOnly(); await clearCloudTrades(); render(); });
+    $("klineImport").addEventListener("change", e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = parseAtasCsv(reader.result);
+          const dayKeys = Object.keys(parsed).sort();
+          if (!dayKeys.length) { $("klineImportNote").textContent = "未解析到 K 线数据，请检查是否为 ATAS 导出格式。"; return; }
+          const imported = loadKlineImported();
+          Object.assign(imported, parsed);
+          localStorage.setItem(KLINE_KEY, JSON.stringify(imported));
+          klineStore = Object.assign({}, KLINE_DATA, imported);
+          klineDay = dayKeys[dayKeys.length - 1];
+          $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天：${dayKeys.join("、")}`;
+          renderKline();
+        } catch (err) {
+          $("klineImportNote").textContent = "导入失败：" + err.message;
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
     $("calcTrade").addEventListener("click", () => computeTradeFields(true));
     ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("input", () => computeTradeFields(false)));
