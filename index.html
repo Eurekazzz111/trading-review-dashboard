@@ -374,6 +374,9 @@
     .half canvas { height: 220px; }
 
     .kline-wrap canvas { height: 440px; }
+    .kline-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+    .kline-toolbar button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .kline-toolbar .hint { color: var(--muted); font-size: 12px; }
     .kline-days { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
     .kline-days button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
     .kline-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 12px; }
@@ -1142,12 +1145,20 @@
             </label>
             <span class="small-note" id="klineImportNote">支持 ATAS 导出格式：年-日-月;开;高;低;收（分号分隔，可含多天）</span>
           </div>
+          <div class="kline-toolbar">
+            <span class="small-note">周期</span>
+            <button data-ktf="1" class="on">1m</button>
+            <button data-ktf="5">5m</button>
+            <button id="klineResetZoom">重置缩放</button>
+            <span class="hint">鼠标滚轮缩放，鼠标悬停位置为缩放中心</span>
+          </div>
           <div class="kline-days" id="klineDays"></div>
           <canvas id="klineChart"></canvas>
           <div class="kline-legend">
             <span><i style="color:#148a5b">▲</i> 多单进场</span>
             <span><i style="color:#bd3b3b">▼</i> 空单进场</span>
-            <span><i>◆</i> 出场</span>
+            <span><i style="color:#148a5b">▼</i> 多单出场</span>
+            <span><i style="color:#bd3b3b">▲</i> 空单出场</span>
             <span><i style="color:#148a5b">—</i> 盈利连线</span>
             <span><i style="color:#bd3b3b">—</i> 亏损连线</span>
             <span class="small-note">进出场标记按当日交易顺序标注 ①②③，并落在对应 K 线上</span>
@@ -1427,6 +1438,8 @@
     function saveKlineLocalOnly() { localStorage.setItem(KLINE_KEY, JSON.stringify(klineStore)); }
     let klineStore = Object.assign({}, KLINE_DATA, loadKlineImported());
     let klineDay = "";
+    let klineTimeframe = 1;
+    let klineViewport = {key:"", start:0, end:0};
 
     let trades = loadTrades();
     let manuals = loadManuals();
@@ -2378,19 +2391,71 @@
 
     function renderKline() {
       const days = Object.keys(klineStore).sort();
+      document.querySelectorAll("[data-ktf]").forEach(b => {
+        b.classList.toggle("on", Number(b.dataset.ktf) === klineTimeframe);
+        b.onclick = () => { klineTimeframe = Number(b.dataset.ktf) || 1; resetKlineViewport(); renderKline(); };
+      });
       if (!days.length) { $("klineDays").innerHTML = `<span class="small-note">未内置 K 线数据。</span>`; return; }
       if (!klineDay || !klineStore[klineDay]) klineDay = days[days.length - 1];
       $("klineDays").innerHTML = days.map(d => `<button data-kday="${d}" class="${d === klineDay ? "on" : ""}">${d.slice(5)}</button>`).join("");
-      document.querySelectorAll("[data-kday]").forEach(b => b.onclick = () => { klineDay = b.dataset.kday; renderKline(); });
+      document.querySelectorAll("[data-kday]").forEach(b => b.onclick = () => { klineDay = b.dataset.kday; resetKlineViewport(); renderKline(); });
       drawKline();
+    }
+
+    function resetKlineViewport() {
+      klineViewport = {key:"", start:0, end:0};
+    }
+
+    function parseKlineMinutes(time) {
+      const m = String(time || "").match(/^(\d{1,2}):(\d{2})/);
+      return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+    }
+
+    function formatKlineMinutes(total) {
+      const h = Math.floor(total / 60) % 24, m = total % 60;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+
+    function aggregateKlineCandles(candles, minutes) {
+      if (!Array.isArray(candles) || minutes <= 1) return (candles || []).slice();
+      const buckets = new Map();
+      candles.forEach(b => {
+        if (!b || b.length < 5) return;
+        const bucket = Math.floor(parseKlineMinutes(b[0]) / minutes) * minutes;
+        const row = buckets.get(bucket);
+        if (!row) buckets.set(bucket, [formatKlineMinutes(bucket), b[1], b[2], b[3], b[4]]);
+        else {
+          row[2] = Math.max(row[2], b[2]);
+          row[3] = Math.min(row[3], b[3]);
+          row[4] = b[4];
+        }
+      });
+      return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row);
+    }
+
+    function ensureKlineViewport(candles) {
+      const n = candles.length;
+      const key = `${klineDay}|${klineTimeframe}|${n}`;
+      if (!n) { klineViewport = {key, start:0, end:0}; return; }
+      if (klineViewport.key !== key || klineViewport.end <= klineViewport.start) {
+        const defaultCount = Math.min(n, klineTimeframe === 1 ? 180 : 220);
+        klineViewport = {key, start:Math.max(0, n - defaultCount), end:n};
+      }
+      klineViewport.start = Math.max(0, Math.min(n - 1, klineViewport.start));
+      klineViewport.end = Math.max(klineViewport.start + 1, Math.min(n, klineViewport.end));
     }
 
     function drawKline() {
       const c = $("klineChart"), ctx = c.getContext("2d");
-      const candles = klineStore[klineDay] || [];
+      const sourceCandles = klineStore[klineDay] || [];
+      const candles = aggregateKlineCandles(sourceCandles, klineTimeframe);
+      ensureKlineViewport(candles);
       const dayTrades = filteredTrades().filter(t => t.date === klineDay).map(derivedTrade)
         .sort((a, b) => String(a.entryTime).localeCompare(String(b.entryTime)));
-      $("klineMeta").textContent = candles.length ? `${klineDay} · ${candles.length} 根 (5m) · ${dayTrades.length} 笔标记` : "";
+      const rawStep = sourceCandles.length > 1 ? Math.max(1, parseKlineMinutes(sourceCandles[1][0]) - parseKlineMinutes(sourceCandles[0][0])) : klineTimeframe;
+      const tfNote = klineTimeframe === 1 && rawStep > 1 ? `1m视图 · 源数据约${rawStep}m` : `${klineTimeframe}m`;
+      const visibleCount = Math.max(0, klineViewport.end - klineViewport.start);
+      $("klineMeta").textContent = candles.length ? `${klineDay} · ${visibleCount}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记` : "";
       renderKlineTradeList(dayTrades);
       const padL = 48, padR = 16, padT = 16, padB = 28;
       const idxForTime = tm => {
@@ -2398,6 +2463,26 @@
         let idx = -1;
         for (let i = 0; i < candles.length; i++) { if (candles[i][0] <= tm) idx = i; else break; }
         return idx < 0 ? 0 : idx;
+      };
+      const drawArrowMarker = (x, y, direction, color, size = 10) => {
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.strokeStyle = "#fbfaf7";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (direction === "up") {
+          ctx.moveTo(x, y - size);
+          ctx.lineTo(x - size * 0.65, y + size * 0.35);
+          ctx.lineTo(x + size * 0.65, y + size * 0.35);
+        } else {
+          ctx.moveTo(x, y + size);
+          ctx.lineTo(x - size * 0.65, y - size * 0.35);
+          ctx.lineTo(x + size * 0.65, y - size * 0.35);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
       };
       const paint = (hoverIndex = -1) => {
         clearCanvas(c, ctx);
@@ -2407,11 +2492,19 @@
           ctx.fillText("这一天没有内置 K 线数据", padL, c.height / 2);
           return;
         }
-        let lo = Math.min(...candles.map(b => b[3]));
-        let hi = Math.max(...candles.map(b => b[2]));
-        dayTrades.forEach(t => [t.entry, t.exit].forEach(v => { const n = Number(v); if (isFinite(n) && n) { lo = Math.min(lo, n); hi = Math.max(hi, n); } }));
+        const start = klineViewport.start, end = klineViewport.end;
+        const visible = candles.slice(start, end);
+        let lo = Math.min(...visible.map(b => b[3]));
+        let hi = Math.max(...visible.map(b => b[2]));
+        dayTrades.forEach(t => {
+          const ei = idxForTime(t.entryTime), xi = idxForTime(t.exitTime);
+          [[ei, t.entry], [xi, t.exit]].forEach(([idx, v]) => {
+            const n = Number(v);
+            if (idx >= start && idx < end && isFinite(n) && n) { lo = Math.min(lo, n); hi = Math.max(hi, n); }
+          });
+        });
         const span = (hi - lo) || 1; lo -= span * 0.04; hi += span * 0.04;
-        const n = candles.length;
+        const n = visible.length;
         const plotW = c.width - padL - padR;
         const step = plotW / n;
         const bw = Math.max(2, step * 0.6);
@@ -2429,10 +2522,10 @@
         const ticks = 8;
         for (let k = 0; k <= ticks; k++) {
           const i = Math.round((n - 1) * k / ticks), x = mapX(i);
-          ctx.fillStyle = "#9a958a"; ctx.fillText(candles[i][0], x - 14, c.height - 8);
+          ctx.fillStyle = "#9a958a"; ctx.fillText(visible[i][0], x - 14, c.height - 8);
         }
         // candles
-        candles.forEach((b, i) => {
+        visible.forEach((b, i) => {
           const o = b[1], h = b[2], l = b[3], cl = b[4], x = mapX(i), up = cl >= o;
           ctx.strokeStyle = up ? "#148a5b" : "#bd3b3b";
           ctx.fillStyle = up ? "#43bf91" : "#f15d68";
@@ -2444,25 +2537,22 @@
         // trade overlay
         dayTrades.forEach((t, oi) => {
           const entry = Number(t.entry); if (!isFinite(entry) || !entry) return;
-          const ei = idxForTime(t.entryTime), ex = mapX(ei), ey = mapY(entry);
+          const ei = idxForTime(t.entryTime);
+          if (ei < start || ei >= end) return;
+          const ex = mapX(ei - start), ey = mapY(entry);
           const win = Number(t.pnl) >= 0, lc = win ? "#148a5b" : "#bd3b3b";
           const exit = Number(t.exit);
           if (isFinite(exit) && exit) {
-            const xi = idxForTime(t.exitTime), xx = mapX(xi), xy = mapY(exit);
+            const xi = idxForTime(t.exitTime);
+            const xx = mapX(Math.max(0, Math.min(n - 1, xi - start))), xy = mapY(exit);
             ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = lc; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(xx, xy); ctx.stroke(); ctx.restore();
-            ctx.save(); ctx.translate(xx, xy); ctx.rotate(Math.PI / 4);
-            ctx.fillStyle = "#fbfaf7"; ctx.strokeStyle = lc; ctx.lineWidth = 2;
-            ctx.fillRect(-5, -5, 10, 10); ctx.strokeRect(-5, -5, 10, 10); ctx.restore();
+            drawArrowMarker(xx, xy, t.side === "Short" ? "up" : "down", lc, 10);
             ctx.fillStyle = lc; ctx.font = "bold 12px Inter, sans-serif";
             ctx.fillText(`${t.side === "Short" ? "空" : "多"} ${money(t.pnl)}`, xx + 8, xy + (win ? -8 : 16));
           }
           const ec = t.side === "Short" ? "#bd3b3b" : "#148a5b";
-          ctx.fillStyle = ec; ctx.strokeStyle = "#fbfaf7"; ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          if (t.side === "Short") { ctx.moveTo(ex, ey + 10); ctx.lineTo(ex - 6, ey - 2); ctx.lineTo(ex + 6, ey - 2); }
-          else { ctx.moveTo(ex, ey - 10); ctx.lineTo(ex - 6, ey + 2); ctx.lineTo(ex + 6, ey + 2); }
-          ctx.closePath(); ctx.fill(); ctx.stroke();
+          drawArrowMarker(ex, ey, t.side === "Short" ? "down" : "up", ec, 10);
           // 按顺序编号
           const ny = t.side === "Short" ? ey + 23 : ey - 23;
           ctx.fillStyle = ec; ctx.beginPath(); ctx.arc(ex, ny, 9, 0, Math.PI * 2); ctx.fill();
@@ -2471,8 +2561,11 @@
           ctx.fillText(String(oi + 1), ex, ny);
           ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
         });
+        ctx.fillStyle = "#9a958a"; ctx.font = "12px Inter, sans-serif"; ctx.textAlign = "right";
+        ctx.fillText(`${visible[0][0]} - ${visible[n - 1][0]}`, c.width - padR, 18);
+        ctx.textAlign = "left";
         if (hoverIndex >= 0 && hoverIndex < n) {
-          const b = candles[hoverIndex], x = mapX(hoverIndex);
+          const b = visible[hoverIndex], x = mapX(hoverIndex);
           drawHoverGuide(ctx, c, x, c.height - padB, mapY(b[4]), padL);
           drawTooltip(ctx, c, x, mapY(b[2]), [`${klineDay} ${b[0]}`, `开 ${b[1].toFixed(2)}  高 ${b[2].toFixed(2)}`, `低 ${b[3].toFixed(2)}  收 ${b[4].toFixed(2)}`]);
         }
@@ -2482,12 +2575,28 @@
         if (!candles.length) return;
         const rect = c.getBoundingClientRect(), rr = c.width / rect.width;
         const x = (e.clientX - rect.left) * rr;
-        const plotW = c.width - padL - padR, step = plotW / candles.length;
+        const visibleCount = klineViewport.end - klineViewport.start;
+        const plotW = c.width - padL - padR, step = plotW / visibleCount;
         let i = Math.round((x - padL) / step - 0.5);
-        i = Math.max(0, Math.min(candles.length - 1, i));
+        i = Math.max(0, Math.min(visibleCount - 1, i));
         paint(i);
       };
       c.onmouseleave = () => paint();
+      c.onwheel = e => {
+        if (!candles.length) return;
+        e.preventDefault();
+        const rect = c.getBoundingClientRect();
+        const xRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const current = Math.max(1, klineViewport.end - klineViewport.start);
+        const next = Math.max(20, Math.min(candles.length, Math.round(current * (e.deltaY < 0 ? 0.78 : 1.25))));
+        const focus = klineViewport.start + current * xRatio;
+        let start = Math.round(focus - next * xRatio);
+        start = Math.max(0, Math.min(candles.length - next, start));
+        klineViewport.start = start;
+        klineViewport.end = start + next;
+        paint();
+        $("klineMeta").textContent = `${klineDay} · ${next}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记`;
+      };
     }
 
     function renderKlineTradeList(dayTrades) {
@@ -3111,6 +3220,7 @@
     ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
     $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
     $("resetSample").addEventListener("click", async () => { trades = []; saveLocalOnly(); await clearCloudTrades(); render(); });
+    $("klineResetZoom").addEventListener("click", () => { resetKlineViewport(); renderKline(); });
     $("klineImport").addEventListener("change", e => {
       const file = e.target.files[0]; if (!file) return;
       const reader = new FileReader();
@@ -3125,6 +3235,7 @@
           saveKlineLocalOnly();
           if (currentUser && cloudReady) await saveCloudKlineData();
           klineDay = dayKeys[dayKeys.length - 1];
+          resetKlineViewport();
           $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天：${dayKeys.join("、")}`;
           renderKline();
         } catch (err) {
