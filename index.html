@@ -455,6 +455,14 @@
     .pill.red { background: var(--red-soft); color: var(--red); }
     .pill.blue { background: #dfeaf0; color: var(--blue); }
     .pill.violet { background: #ebe3f0; color: var(--violet); }
+    .pill.keyword-0 { background: #e8ecff; color: #526fd6; }
+    .pill.keyword-1 { background: #eee8fb; color: #6847c7; }
+    .pill.keyword-2 { background: #daf7eb; color: #15915f; }
+    .pill.keyword-3 { background: #ffe8d8; color: #b35d18; }
+    .pill.keyword-4 { background: #dff5f2; color: #167f78; }
+    .pill.keyword-5 { background: #ffe3ec; color: #bd3d65; }
+    .pill.keyword-6 { background: #eef0d8; color: #6f7b1d; }
+    .pill.keyword-7 { background: #e3eef8; color: #2f70a5; }
 
     .view { display: none; }
     .view.active { display: block; }
@@ -504,6 +512,20 @@
       color: var(--muted);
       font-size: 12px;
       line-height: 1.45;
+    }
+
+    .strategy-keywords {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      align-items: center;
+      margin-top: 5px;
+    }
+
+    .strategy-keywords .market-label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 22px;
     }
 
     .ai-list {
@@ -1213,7 +1235,6 @@
             <div class="panel-head">
               <h3>策略长文</h3>
               <div class="toolbar-row">
-                <button id="extractKeywords">提炼关键词</button>
                 <button id="saveStrategy" class="primary">保存策略</button>
               </div>
             </div>
@@ -1223,7 +1244,7 @@
               <div class="field"><label>市场</label><input id="manualMarket" placeholder="NQ / ES"></div>
               <div class="field"><label>状态</label><select id="manualStatus"><option>Active</option><option>Watch</option><option>Paused</option></select></div>
               <div class="field full"><label>策略反思长文</label><textarea id="manualReflection" class="reflection-box" placeholder="这里写完整逻辑、观察、复盘感悟、失败案例、待验证想法。可以写很长，不需要压缩。"></textarea></div>
-              <div class="field full"><label>关键词</label><input id="manualKeywords" placeholder="点击提炼关键词，或手动输入：大周期, 5分钟, LVP, 吸收"></div>
+              <div class="field full"><label>关键词</label><input id="manualKeywords" placeholder="手动输入：大周期, 5分钟, LVP, 吸收"></div>
               <div class="field full"><label>入场规则</label><textarea id="manualEntry"></textarea></div>
               <div class="field full"><label>出场规则</label><textarea id="manualExit"></textarea></div>
               <div class="field full"><label>失效条件</label><textarea id="manualInvalid"></textarea></div>
@@ -1236,7 +1257,7 @@
             </div>
             <div class="stack">
               <div>
-                <div class="small-note" style="margin-bottom:8px;">从长文中提炼出的复习关键词</div>
+                <div class="small-note" style="margin-bottom:8px;">你手动写入的复习关键词</div>
                 <div class="keyword-cloud" id="strategyKeywordCloud"></div>
               </div>
               <div class="strategy-note" id="strategyCoreNote"></div>
@@ -2136,7 +2157,7 @@
         ...list.map(t => t.emotionCause)
       ]).slice(0, 18);
       $("overallKeywordCloud").innerHTML = keys.length
-        ? keys.map((k, i) => `<span class="pill ${["blue","violet","green"][i % 3]}">${escapeHtml(k)}</span>`).join("")
+        ? keys.map(keywordPill).join("")
         : `<span class="small-note">暂无关键词。</span>`;
       $("overallCoreNote").textContent = `整体样本 ${s.trades} 笔，净盈亏 ${money(s.total)}，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，胜率 ${pct(s.winRate)}，最大回撤 ${money(s.maxDrawdown)}。`;
       const score = calcScore(list);
@@ -2771,9 +2792,29 @@
       return unique([...found, ...english]).slice(0, 18);
     }
 
+    function parseKeywordInput(value) {
+      const seen = new Set();
+      return String(value || "").split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean).filter(k => {
+        const key = k.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function keywordClass(keyword) {
+      const text = String(keyword || "").toLowerCase();
+      let hash = 0;
+      for (let i = 0; i < text.length; i += 1) hash = ((hash * 31) + text.charCodeAt(i)) >>> 0;
+      return `keyword-${hash % 8}`;
+    }
+
+    function keywordPill(keyword) {
+      return `<span class="pill ${keywordClass(keyword)}">${escapeHtml(keyword)}</span>`;
+    }
+
     function manualKeywords(m = {}) {
-      const typed = String(m.keywords || "").split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
-      return unique([...typed, ...extractManualKeywords(collectManualText(m))]).slice(0, 18);
+      return parseKeywordInput(m.keywords).slice(0, 18);
     }
 
     function renderStrategyAnalysis(m = {}) {
@@ -2781,32 +2822,29 @@
       const s = calcStats(rows);
       const keys = manualKeywords(m);
       $("strategyKeywordCloud").innerHTML = keys.length
-        ? keys.map((k, i) => `<span class="pill ${["blue","violet","green"][i % 3]}">${escapeHtml(k)}</span>`).join("")
-        : `<span class="small-note">写入策略长文后点击“提炼关键词”。</span>`;
+        ? keys.map(keywordPill).join("")
+        : `<span class="small-note">在「关键词」栏手动写入后，这里会同步显示。</span>`;
       $("strategyCoreNote").textContent = keys.length
         ? `复习重点：${keys.slice(0, 8).join(" / ")}`
         : "这里保留关键词，不生成长总结，避免覆盖你的原始思考。";
     }
 
-    function extractCurrentManualKeywords() {
-      const draft = {
-        name: $("manualName").value,
-        market: $("manualMarket").value,
-        reflection: $("manualReflection").value,
-        keywords: $("manualKeywords").value,
-        entry: $("manualEntry").value,
-        exit: $("manualExit").value,
-        invalid: $("manualInvalid").value
-      };
-      const keys = manualKeywords(draft);
-      $("manualKeywords").value = keys.join(", ");
-      renderStrategyAnalysis({...draft, keywords: $("manualKeywords").value});
+    function manualKeywordLineHtml(m = {}) {
+      const keys = manualKeywords(m).slice(0, 4).map(keywordPill).join("");
+      return `<span class="market-label">${escapeHtml(m.market || "")}</span>${keys || `<span class="market-label">${escapeHtml(m.entry || "暂无关键词")}</span>`}`;
+    }
+
+    function updateSelectedManualPreview(m = {}) {
+      const id = $("manualId").value;
+      if (!id) return;
+      const item = document.querySelector(`[data-manual="${CSS.escape(id)}"] .strategy-keywords`);
+      if (item) item.innerHTML = manualKeywordLineHtml(m);
     }
 
     function renderManuals() {
       $("strategyList").innerHTML = manuals.map(m => `<div class="strategy-item ${m.id === selectedManualId ? "active" : ""}" data-manual="${m.id}">
         <h4>${escapeHtml(m.name)} <span class="pill ${m.status === "Active" ? "green" : m.status === "Paused" ? "red" : "blue"}">${escapeHtml(m.status)}</span></h4>
-        <p>${escapeHtml(m.market)} · ${escapeHtml(manualKeywords(m).slice(0, 4).join(" / ") || m.entry)}</p>
+        <div class="strategy-keywords">${manualKeywordLineHtml(m)}</div>
       </div>`).join("");
       document.querySelectorAll("[data-manual]").forEach(el => el.addEventListener("click", () => {
         selectedManualId = el.dataset.manual;
@@ -2885,7 +2923,7 @@
     function renderLearningAnalysis(n = {}) {
       const keys = extractManualKeywords(collectLearningText(n));
       $("learningKeywordCloud").innerHTML = keys.length
-        ? keys.map((k, i) => `<span class="pill ${["blue","violet","green"][i % 3]}">${escapeHtml(k)}</span>`).join("")
+        ? keys.map(keywordPill).join("")
         : `<span class="small-note">写入内容后这里会提炼关键词。</span>`;
       $("learningCoreNote").textContent = n.strategyName
         ? `分类：${n.strategyName}。复习重点：${keys.slice(0, 8).join(" / ") || "等待更多内容"}`
@@ -3263,9 +3301,8 @@
     $("saveTrade").addEventListener("click", saveTradeForm);
     $("clearTradeForm").addEventListener("click", () => fillTradeForm());
     $("saveStrategy").addEventListener("click", saveManualForm);
-    $("extractKeywords").addEventListener("click", extractCurrentManualKeywords);
     ["manualReflection","manualKeywords","manualEntry","manualExit","manualInvalid","manualName","manualMarket"].forEach(id => $(id).addEventListener("input", () => {
-      renderStrategyAnalysis({
+      const draft = {
         name: $("manualName").value,
         market: $("manualMarket").value,
         reflection: $("manualReflection").value,
@@ -3273,7 +3310,9 @@
         entry: $("manualEntry").value,
         exit: $("manualExit").value,
         invalid: $("manualInvalid").value
-      });
+      };
+      renderStrategyAnalysis(draft);
+      updateSelectedManualPreview(draft);
     }));
     $("newLearning").addEventListener("click", () => { selectedLearningId = "__new__"; renderLearningNotes(); fillLearningForm({}); });
     $("saveLearning").addEventListener("click", saveLearningForm);
