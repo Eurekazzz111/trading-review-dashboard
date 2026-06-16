@@ -1,12 +1,12 @@
-feat: 新增策略学习记录并完善云端同步说明
+feat: add trade management risk fields and manual keyword sync
 
-- 新增「策略学习」页面，位于「策略手册」下方
-- 支持按大策略名称分类学习记录
-- 学习记录包含：思考、反思、新知识、格外注意的点
-- 策略手册关键词改为手动输入；左侧策略列表、右侧关键词复习和核心分析同步显示，同一关键词固定同一颜色
-- 新增 Supabase 表 strategy_learning_notes，用于跨设备同步策略学习记录
-- K 线数据已支持同步到 Supabase kline_days 表
-- README 新增「最近更新」段落，汇总策略学习、K 线云端同步和 Supabase 表更新
+- 保留策略手册关键词手动输入方案：左侧策略列表、右侧关键词复习和核心分析同步显示，同一关键词固定同一颜色
+- Add targetPrice, exitReason, managementTag, managementReview and targetReached fields
+- Calculate realizedR from actual P&L divided by initial risk dollars
+- Add dashboard/core analysis metrics for realized R, payoff ratio and missed target profit
+- Let trade strategy use existing strategy names through a datalist while still allowing custom input
+- Sync edited trade form values into trade table and K-line review panels immediately
+- Update K-line trade number markers so losing trades are red
+- Update README and CSV example for the new import/export fields
 
-上线后需要在 Supabase SQL Editor 重新运行最新版 supabase-schema.sql，
-以补齐 strategy_learning_notes 和 kline_days 等云端表。
+Note: after deployment, existing cloud rows continue to work because new fields live inside the JSON data payload.

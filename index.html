@@ -1123,16 +1123,22 @@
             <div class="field"><label>交易段</label><select id="dayPart"><option>早盘</option><option>午盘</option><option>尾盘</option></select></div>
             <div class="field"><label>品种</label><input id="symbol" placeholder="NQ / ES / MNQ"></div>
             <div class="field"><label>方向</label><select id="side"><option>Long</option><option>Short</option></select></div>
-            <div class="field"><label>策略</label><input id="strategy" placeholder="Opening Drive"></div>
+            <div class="field"><label>策略</label><input id="strategy" list="strategyOptions" placeholder="选择现有策略或输入新策略"><datalist id="strategyOptions"></datalist></div>
             <div class="field"><label>入场价</label><input id="entry" type="number" step="0.01"></div>
             <div class="field"><label>Initial Stop</label><input id="initialStop" type="number" step="0.01"></div>
+            <div class="field"><label>目标价</label><input id="targetPrice" type="number" step="0.01"></div>
             <div class="field"><label>出场价</label><input id="exit" type="number" step="0.01"></div>
             <div class="field"><label>数量</label><input id="qty" type="number" step="1"></div>
             <div class="field"><label>点数</label><input id="points" type="number" step="0.01"></div>
             <div class="field"><label>盈亏</label><input id="pnl" type="number" step="0.01"></div>
             <div class="field"><label>Risk/Reward</label><input id="riskReward" type="number" step="0.01"></div>
+            <div class="field"><label>Realized R</label><input id="realizedR" type="number" step="0.01" readonly></div>
+            <div class="field"><label>后续是否到目标</label><select id="targetReached"><option value="false">未确认/未到</option><option value="true">后续到目标</option></select></div>
             <div class="field"><label>持仓分钟</label><input id="holdingMinutes" type="number" step="1"></div>
             <div class="field"><label>执行评分</label><input id="grade" type="number" min="1" max="5" step="1"></div>
+            <div class="field"><label>出场原因</label><select id="exitReason"><option></option><option>到目标</option><option>保护止损</option><option>保本</option><option>锁盈</option><option>初始止损</option><option>结构失效</option><option>手动提前出场</option><option>时间出场</option></select></div>
+            <div class="field"><label>管理标签</label><select id="managementTag"><option></option><option>按计划持有</option><option>推保护保本</option><option>推保护锁盈</option><option>过早保护</option><option>结构失效出场</option><option>手动提前出场</option><option>被止损</option><option>到目标</option></select></div>
+            <div class="field"><label>保护评价</label><select id="managementReview"><option></option><option>合理保护</option><option>过早保护</option><option>过晚保护</option><option>未按计划</option><option>无需评价</option></select></div>
             <div class="field"><label>规则执行</label><select id="ruleBroken"><option value="false">守规则</option><option value="true">破规则</option></select></div>
             <div class="field"><label>违规标签</label><select id="ruleViolation"><option></option><option>抢跑</option><option>追单</option><option>逆势</option><option>未等确认</option><option>超风险</option><option>提前离场</option></select></div>
             <div class="field"><label>情绪原因</label><select id="emotionCause"><option></option><option>FOMO</option><option>复仇交易</option><option>害怕亏损</option><option>过度自信</option><option>犹豫</option><option>疲劳</option></select></div>
@@ -1740,11 +1746,15 @@
       const entry = toNum(t.entry);
       const exit = toNum(t.exit);
       const initialStop = toNum(t.initialStop ?? t.stop);
+      const targetPrice = toNum(t.targetPrice ?? t.target);
       const qty = toNum(t.qty) ?? 0;
       const existingPoints = toNum(t.points);
       t.points = entry !== null && exit !== null ? (existingPoints ?? (exit - entry) * dir) : (existingPoints ?? 0);
       t.initialStop = initialStop ?? "";
+      t.targetPrice = targetPrice ?? "";
       const riskPoints = entry !== null && initialStop !== null ? Math.abs(entry - initialStop) : 0;
+      t.initialRiskPoints = riskPoints || "";
+      t.initialRiskDollar = riskPoints && t.pointValue && qty ? riskPoints * t.pointValue * qty : "";
       const existingRiskReward = toNum(t.riskReward ?? t.rMultiple ?? t.r);
       t.riskReward = riskPoints > 0 && toNum(t.points) !== null ? t.points / riskPoints : (existingRiskReward ?? "");
       const existingPnl = toNum(t.pnl);
@@ -1755,11 +1765,21 @@
       } else {
         t.pnl = 0;
       }
+      const existingRealizedR = toNum(t.realizedR);
+      t.realizedR = t.initialRiskDollar ? Number(t.pnl || 0) / Number(t.initialRiskDollar) : (existingRealizedR ?? "");
+      t.targetReached = parseBool(t.targetReached);
+      const missedPoints = t.targetReached && targetPrice !== null && exit !== null
+        ? Math.max(0, (targetPrice - exit) * dir)
+        : 0;
+      t.missedProfit = missedPoints && t.pointValue && qty ? missedPoints * t.pointValue * qty : 0;
       t.holdingMinutes = toNum(t.holdingMinutes) ?? minutesBetween(t.date, t.entryTime, t.exitTime);
       t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
       t.ruleBroken = raw.ruleBroken === true || raw.ruleBroken === "true" || raw.ruleBroken === 1 || raw.ruleBroken === "1";
       t.ruleViolation = t.ruleViolation || "";
       t.emotionCause = t.emotionCause || "";
+      t.exitReason = t.exitReason || "";
+      t.managementTag = t.managementTag || "";
+      t.managementReview = t.managementReview || "";
       return t;
     }
 
@@ -1794,6 +1814,9 @@
       const avgWin = wins.length ? grossWin / wins.length : 0;
       const avgLoss = losses.length ? grossLossAbs / losses.length : 0;
       const riskRewards = list.map(t => toNum(t.riskReward)).filter(v => v !== null);
+      const realizedRs = list.map(t => toNum(t.realizedR)).filter(v => v !== null);
+      const missedProfit = list.reduce((s,t) => s + Number(t.missedProfit || 0), 0);
+      const targetReachedCount = list.filter(t => t.targetReached).length;
       return {
         trades: list.length,
         total,
@@ -1810,6 +1833,10 @@
         grossWin,
         grossLossAbs,
         avgR: riskRewards.length ? riskRewards.reduce((s,t) => s + t, 0) / riskRewards.length : "",
+        avgRealizedR: realizedRs.length ? realizedRs.reduce((s,t) => s + t, 0) / realizedRs.length : "",
+        totalRealizedR: realizedRs.length ? realizedRs.reduce((s,t) => s + t, 0) : "",
+        missedProfit,
+        targetReachedCount,
         avgPoints: list.length ? totalPoints / list.length : 0,
         avgHold: list.length ? list.reduce((s,t) => s + Number(t.holdingMinutes || 0), 0) / list.length : 0,
         avgGrade: list.length ? list.reduce((s,t) => s + Number(t.grade || 0), 0) / list.length : 0,
@@ -1885,6 +1912,17 @@
       });
     }
 
+    function renderStrategyOptions() {
+      const el = $("strategyOptions");
+      if (!el) return;
+      const values = unique([
+        ...manuals.map(m => m.name),
+        ...trades.map(t => t.strategy),
+        ...learningNotes.map(n => n.strategyName)
+      ]).filter(Boolean);
+      el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join("");
+    }
+
     function renderKpis(list) {
       const s = calcStats(list);
       const pf = s.profitFactor === Infinity ? "∞" : num(s.profitFactor);
@@ -1894,7 +1932,10 @@
         ["Profit Factor", pf, `${money(s.grossWin)} / ${money(-s.grossLossAbs)}`, s.profitFactor >= 1.5 ? "positive" : s.profitFactor < 1 ? "negative" : "neutral", "ring", clamp01((Number.isFinite(s.profitFactor) ? s.profitFactor : 3) / 3) * 100],
         ["Win Rate", pct(s.winRate), `${s.wins}W / ${s.losses}L`, s.winRate >= .5 ? "positive" : "neutral", "ring", s.winRate * 100],
         ["数学期望", money(s.expectancy), "每笔平均", pnlClass(s.expectancy), "bar", clamp01((s.expectancy + Math.max(1, s.avgWin)) / Math.max(1, s.avgWin * 2)) * 100],
-        ["Avg Win / Avg Loss", `<span class="positive">${money(s.avgWin)}</span> / <span class="negative">${money(-s.avgLoss)}</span>`, `盈亏比 ${s.payoff === Infinity ? "∞" : num(s.payoff)}`, "", "bars", clamp01(s.payoff / 3) * 100],
+        ["Avg Win / Avg Loss", `<span class="positive">${money(s.avgWin)}</span> / <span class="negative">${money(-s.avgLoss)}</span>`, "平均盈利 / 平均亏损", "", "bars", clamp01(s.payoff / 3) * 100],
+        ["盈亏比", s.payoff === Infinity ? "∞" : num(s.payoff), "Avg Win ÷ Avg Loss", s.payoff >= 1.5 ? "positive" : s.payoff < 1 ? "negative" : "neutral", "ring", clamp01(s.payoff / 3) * 100],
+        ["Realized R", num(s.avgRealizedR, 2), `总R ${num(s.totalRealizedR, 2)}`, pnlClass(s.avgRealizedR), "bar", clamp01((Number(s.avgRealizedR || 0) + 1) / 2) * 100],
+        ["目标错失", money(s.missedProfit), `${s.targetReachedCount} 笔后续到目标`, s.missedProfit > 0 ? "negative" : "neutral", "bar", clamp01(s.missedProfit / Math.max(1, s.grossWin)) * 100],
         ["Max Drawdown", money(s.maxDrawdown), `平均持仓 ${num(s.avgHold,0)}m`, s.maxDrawdown < 0 ? "negative" : "neutral", "ring", scoreDrawdown(s)]
       ];
       $("kpis").innerHTML = items.map(([label, value, sub, cls, visual, pctValue]) => `
@@ -1952,9 +1993,11 @@
       $("tradeCount").textContent = list.length + " 笔";
       const head = `<thead><tr>
         <th>日期</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th>
-        <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">出场</th><th class="num">点数</th><th class="num">盈亏</th><th class="num">Risk/Reward</th><th class="num">持仓</th><th>纪律</th><th>违规/情绪</th><th></th>
+        <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">目标</th><th class="num">出场</th><th class="num">点数</th><th class="num">盈亏</th><th class="num">Risk/Reward</th><th class="num">Realized R</th><th class="num">错失</th><th class="num">持仓</th><th>管理</th><th>纪律</th><th>违规/情绪</th><th></th>
       </tr></thead>`;
-      const body = list.length ? list.map(t => `<tr>
+      const body = list.length ? list.map(raw => {
+        const t = derivedTrade(raw);
+        return `<tr>
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
         <td><span class="pill violet">${escapeHtml(t.session)}</span></td>
         <td><span class="pill blue">${escapeHtml(t.dayPart)}</span></td>
@@ -1963,15 +2006,20 @@
         <td>${escapeHtml(t.strategy)}</td>
         <td class="num">${num(t.entry, 2)}</td>
         <td class="num">${num(t.initialStop, 2)}</td>
+        <td class="num">${num(t.targetPrice, 2)}</td>
         <td class="num">${num(t.exit, 2)}</td>
         <td class="num ${pnlClass(t.points)}">${num(t.points, 1)}</td>
         <td class="num ${pnlClass(t.pnl)}">${money(t.pnl)}</td>
         <td class="num ${pnlClass(t.riskReward)}">${num(t.riskReward)}</td>
+        <td class="num ${pnlClass(t.realizedR)}">${num(t.realizedR)}</td>
+        <td class="num ${t.missedProfit > 0 ? "negative" : "neutral"}">${t.targetReached ? money(t.missedProfit) : "-"}</td>
         <td class="num">${num(t.holdingMinutes, 0)}m</td>
+        <td>${escapeHtml([t.exitReason, t.managementTag, t.managementReview].filter(Boolean).join(" / ") || "-")}</td>
         <td><span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span></td>
         <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
         <td><button class="icon" data-edit="${t.id}">✎</button></td>
-      </tr>`).join("") : `<tr><td colspan="16" class="empty">无记录</td></tr>`;
+      </tr>`;
+      }).join("") : `<tr><td colspan="20" class="empty">无记录</td></tr>`;
       $("tradeTable").innerHTML = head + `<tbody>${body}</tbody>`;
       document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => editTrade(btn.dataset.edit)));
     }
@@ -2170,6 +2218,10 @@
       $("analysisRiskMetrics").innerHTML = [
         ["总 RR", num(list.reduce((a,t) => a + Number(t.riskReward || 0), 0), 2)],
         ["RR 期望/笔", num(s.avgR, 2)],
+        ["Realized R/笔", num(s.avgRealizedR, 2)],
+        ["总 Realized R", num(s.totalRealizedR, 2)],
+        ["盈亏比", s.payoff === Infinity ? "∞" : num(s.payoff)],
+        ["目标错失", money(s.missedProfit)],
         ["最长连胜", streak.maxWin],
         ["最长连负", streak.maxLoss],
         ["平均持仓", `${num(s.avgHold,0)}m`],
@@ -2576,7 +2628,7 @@
           drawArrowMarker(ex, ey, t.side === "Short" ? "down" : "up", ec, 10);
           // 按顺序编号
           const ny = t.side === "Short" ? ey + 23 : ey - 23;
-          ctx.fillStyle = ec; ctx.beginPath(); ctx.arc(ex, ny, 9, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = lc; ctx.beginPath(); ctx.arc(ex, ny, 9, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = "#fff"; ctx.font = "bold 12px Inter, sans-serif";
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
           ctx.fillText(String(oi + 1), ex, ny);
@@ -2826,7 +2878,7 @@
         : `<span class="small-note">在「关键词」栏手动写入后，这里会同步显示。</span>`;
       $("strategyCoreNote").textContent = keys.length
         ? `复习重点：${keys.slice(0, 8).join(" / ")}`
-        : "这里保留关键词，不生成长总结，避免覆盖你的原始思考。";
+        : "这里会同步显示你手动填写的关键词，不再自动提炼长文内容。";
     }
 
     function manualKeywordLineHtml(m = {}) {
@@ -2995,7 +3047,7 @@
 
     function renderRoadmap() {
       const items = [
-        ["导入模板锁定", "固定 CSV 字段：id, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entry, initialStop, exit, riskReward, pnl, qty, grade, ruleBroken, ruleViolation, emotionCause, notes。点数、美元、Risk/Reward 和持仓时间自动计算；pnl 和 riskReward 可留空，也可以只填真实 pnl。"],
+        ["导入模板锁定", "固定 CSV 字段：id, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entry, initialStop, targetPrice, exit, riskReward, realizedR, targetReached, pnl, qty, grade, exitReason, managementTag, managementReview, ruleBroken, ruleViolation, emotionCause, notes。点数、美元、Risk/Reward、Realized R 和持仓时间自动计算；pnl、riskReward 和 realizedR 可留空，也可以只填真实 pnl。"],
         ["截图归档", "每笔交易追加入场图、出场图、复盘图，后续可按策略自动筛选错误截图。"],
         ["MAE/MFE", "记录最大浮亏点数和最大浮盈点数，判断止损是否太紧、止盈是否太早。"],
         ["手续费与滑点", "按品种配置手续费、滑点和每点美元，区分毛盈亏和净盈亏。"],
@@ -3009,10 +3061,11 @@
     function fillTradeForm(t = {}) {
       t = t.id ? derivedTrade(t) : t;
       manualDayPartTouched = Boolean(t.dayPart);
-      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","qty","points","pnl","riskReward","holdingMinutes","grade","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
+      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","targetPrice","exit","qty","points","pnl","riskReward","realizedR","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
         const key = id === "tradeId" ? "id" : id;
         if ($(id)) $(id).value = t[key] ?? "";
       });
+      if (!$("targetReached").value) $("targetReached").value = "false";
       if (!$("date").value) $("date").valueAsDate = new Date();
       if (!$("session").value) $("session").value = "美盘";
       if (!$("dayPart").value) $("dayPart").value = "早盘";
@@ -3035,6 +3088,7 @@
       const qty = toNum($("qty").value) ?? 0;
       const pointValue = pointValueForSymbol(symbol);
       const dir = $("side").value === "Short" ? -1 : 1;
+      const currentPnl = toNum($("pnl").value);
       if (entry !== null && exit !== null) {
         const points = (exit - entry) * dir;
         $("points").value = num(points, 2);
@@ -3042,15 +3096,17 @@
         const risk = initialStop !== null ? Math.abs(entry - initialStop) : 0;
         if (risk) $("riskReward").value = num(points / risk, 2);
         else if (forcePnl) $("riskReward").value = "";
+        const pnlForR = (forcePnl || !$("pnl").value) && qty && pointValue ? points * pointValue * qty : currentPnl;
+        const riskDollar = risk && qty && pointValue ? risk * pointValue * qty : 0;
+        $("realizedR").value = riskDollar && pnlForR !== null ? num(pnlForR / riskDollar, 2) : "";
       }
       const hold = minutesBetween($("date").value, $("entryTime").value, $("exitTime").value);
       if (hold) $("holdingMinutes").value = hold;
       if (!manualDayPartTouched) $("dayPart").value = inferDayPart($("entryTime").value, $("session").value);
     }
 
-    function saveTradeForm() {
-      computeTradeFields(true);
-      const t = {
+    function readTradeFormDraft() {
+      return {
         id: $("tradeId").value || "T" + Date.now(),
         date: $("date").value,
         entryTime: $("entryTime").value,
@@ -3062,14 +3118,20 @@
         strategy: $("strategy").value.trim(),
         entry: toNum($("entry").value) ?? "",
         initialStop: toNum($("initialStop").value) ?? "",
+        targetPrice: toNum($("targetPrice").value) ?? "",
         exit: toNum($("exit").value) ?? "",
         qty: toNum($("qty").value) ?? 0,
         pointValue: pointValueForSymbol($("symbol").value),
         points: toNum($("points").value) ?? "",
         pnl: toNum($("pnl").value) ?? 0,
         riskReward: toNum($("riskReward").value) ?? "",
+        realizedR: toNum($("realizedR").value) ?? "",
+        targetReached: $("targetReached").value === "true",
         holdingMinutes: toNum($("holdingMinutes").value) ?? 0,
         grade: toNum($("grade").value) ?? 0,
+        exitReason: $("exitReason").value,
+        managementTag: $("managementTag").value,
+        managementReview: $("managementReview").value,
         ruleBroken: $("ruleBroken").value === "true",
         ruleViolation: $("ruleViolation").value,
         emotionCause: $("emotionCause").value,
@@ -3077,6 +3139,26 @@
         entryReason: $("entryReason").value.trim(),
         notes: $("notes").value.trim()
       };
+    }
+
+    function syncOpenTradeDraft() {
+      const id = $("tradeId").value;
+      if (!id) return;
+      computeTradeFields(false);
+      const i = trades.findIndex(x => x.id === id);
+      if (i < 0) return;
+      trades[i] = readTradeFormDraft();
+      const list = filteredTrades();
+      renderKpis(list);
+      renderTables(list);
+      renderCoreAnalysis(list);
+      drawCharts(list);
+      renderKline();
+    }
+
+    function saveTradeForm() {
+      computeTradeFields(true);
+      const t = readTradeFormDraft();
       if (!t.date || !t.symbol || !t.strategy) return;
       const i = trades.findIndex(x => x.id === t.id);
       if (i >= 0) trades[i] = t; else trades.push(t);
@@ -3136,14 +3218,20 @@
           strategy: o.strategy || o["策略"] || "",
           entry: o.entry || o["入场价"] || "",
           initialStop: o.initialStop || o.initial_stop || o.stop || o["初始止损"] || o["止损价"] || "",
+          targetPrice: o.targetPrice || o.target_price || o.target || o["目标价"] || o["止盈价"] || "",
           exit: o.exit || o["出场价"] || "",
           qty: o.qty || o["数量"] || "",
           pointValue: o.pointValue || o.point_value || o["每点美元"] || "",
           points: o.points || o["点数"] || "",
           pnl: o.pnl || o.PnL || o["盈亏"] || "",
           riskReward: o.riskReward || o.risk_reward || o.rMultiple || o.r || o["风险收益比"] || o["R倍数"] || "",
+          realizedR: o.realizedR || o.realized_r || o["Realized R"] || o["实际R"] || "",
+          targetReached: parseBool(o.targetReached || o.target_reached || o["后续是否到目标"] || o["后续到目标"]),
           holdingMinutes: o.holdingMinutes || o.holding_minutes || o["持仓分钟"] || "",
           grade: o.grade || o["执行评分"] || "",
+          exitReason: o.exitReason || o.exit_reason || o["出场原因"] || "",
+          managementTag: o.managementTag || o.management_tag || o["管理标签"] || "",
+          managementReview: o.managementReview || o.management_review || o["保护评价"] || "",
           ruleBroken: parseBool(o.ruleBroken || o.rule_broken || o["规则执行"] || o["破规则"]),
           ruleViolation: o.ruleViolation || o.rule_violation || o["违规标签"] || "",
           emotionCause: o.emotionCause || o.emotion_cause || o["情绪原因"] || "",
@@ -3168,7 +3256,7 @@
     }
 
     function exportCsv() {
-      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","exit","riskReward","pnl","qty","grade","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
+      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","targetPrice","exit","riskReward","realizedR","targetReached","pnl","qty","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
       const lines = [headers.join(",")].concat(trades.map(t => derivedTrade(t)).map(t => headers.map(h => csvCell(t[h])).join(",")));
       const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
       const url = URL.createObjectURL(blob);
@@ -3242,6 +3330,7 @@
 
     function render() {
       renderFilters();
+      renderStrategyOptions();
       const list = filteredTrades();
       renderKpis(list);
       renderTables(list);
@@ -3284,10 +3373,11 @@
       e.target.value = "";
     });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
-    $("calcTrade").addEventListener("click", () => computeTradeFields(true));
-    ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("input", () => computeTradeFields(false)));
-    ["date","entryTime","exitTime","session","symbol","side","entry","initialStop","exit","qty"].forEach(id => $(id).addEventListener("change", () => computeTradeFields(false)));
-    $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; });
+    $("calcTrade").addEventListener("click", () => { computeTradeFields(true); syncOpenTradeDraft(); });
+    const tradeSyncFields = ["date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","targetPrice","exit","qty","points","pnl","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
+    tradeSyncFields.forEach(id => $(id).addEventListener("input", () => syncOpenTradeDraft()));
+    tradeSyncFields.forEach(id => $(id).addEventListener("change", () => syncOpenTradeDraft()));
+    $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; syncOpenTradeDraft(); });
     $("openSettings").addEventListener("click", openSettingsModal);
     $("closeSettings").addEventListener("click", closeSettingsModal);
     $("saveSettings").addEventListener("click", saveSettingsForm);

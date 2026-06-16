@@ -23,16 +23,19 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 
 - 交易日志录入和 CSV 导入/导出
 - 自动计算点数、美元盈亏、持仓时间、Risk/Reward
+- 风险管理记录：初始止损、目标价、出场原因、管理标签、保护评价、后续是否到目标
+- 自动计算 Realized R、平均 Realized R、总 Realized R、盈亏比和目标错失利润
 - NQ 默认每点 20 美元，MNQ 默认每点 2 美元，ES 默认每点 50 美元，MES 默认每点 5 美元
 - Profit Factor、Win Rate、数学期望、Average Win / Average Loss（亏损统一显示为红色）
 - 每日总记录、周统计、月历统计
 - 累计盈亏曲线、每日盈亏柱状图
-- K 线图：导入 ATAS 当日 K 线 CSV，按进出场时间和点位自动标注交易，进出场按顺序编号 ①②③，下方按顺序列出当日每笔交易（策略、入场信号、入场点位选择原因、备注）
+- K 线图：导入 ATAS 当日 K 线 CSV，支持 1m / 5m 切换和鼠标滚轮缩放；按进出场时间和点位自动标注交易，进出场按顺序编号 ①②③，下方按顺序列出当日每笔交易（策略、入场信号、入场点位选择原因、备注）
 - 按策略、盘段、方向、纪律执行统计
 - 入场信号、入场点位选择原因记录；规则违规标签和情绪原因记录
 - 破规则由人工手动标记（不再按执行评分自动推断），破规则理由写在备注里
 - 策略手册支持手动维护关键词；左侧策略列表、右侧关键词复习和核心分析会同步显示，并保持同一关键词同一颜色
 - 策略学习页：按大策略分类记录大段思考、反思、新知识和格外注意点，方便持续复习
+- 策略手册关键词改为手动填写并同步显示；相同关键词在不同区域保持同色，方便复习
 - 响应式布局，手机和平板可用；数据表数字右对齐、等宽对齐
 - 策略手册、核心分析、AI 复盘提示
 - Supabase 邮箱登录和云端同步
@@ -46,19 +49,24 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - K 线数据已从本机缓存升级为云端同步：ATAS K 线 CSV 导入后会写入 `kline_days` 表。
 - K 线图支持按交易顺序标注进出场，并在下方列出对应交易的策略、入场信号、入场点位选择原因和备注。
 - 交易数据、策略手册、策略学习记录、设置和 K 线数据都支持 Supabase 云端保存。
+- 新增交易管理字段：`targetPrice`、`exitReason`、`managementTag`、`managementReview`、`targetReached`。
+- 总览和核心分析新增 Realized R、盈亏比、目标错失利润统计。
+- 交易日志策略字段支持从现有策略下拉选择，同时保留手动输入新策略。
+- 策略关键词不再自动提炼，改为只同步显示手动填写的关键词，并用稳定颜色区分。
+- K 线图 1m / 5m 切换、鼠标滚轮缩放、方向箭头进出场标记和亏损交易红色编号已上线。
 
 ## CSV 格式
 
 推荐字段：
 
 ```csv
-id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entry,initialStop,exit,riskReward,pnl,qty,grade,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
+id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
 ```
 
 示例：
 
 ```csv
-T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,22050,2.50,2000,2,5,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
+T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,22050,22050,2.50,2.50,true,2000,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
 ```
 
 字段说明：
@@ -72,11 +80,17 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,220
 - `strategy`：策略名称
 - `entry`：入场价，可留空
 - `initialStop`：初始止损价，可留空
+- `targetPrice`：计划目标价/止盈价，可留空
 - `exit`：出场价，可留空
 - `riskReward`：Risk/Reward，可留空，网页会在能计算时自动计算
+- `realizedR`：实际 R，可留空，网页会用真实盈亏 / 初始风险美元自动计算
+- `targetReached`：后续是否到目标，`true` 或 `false`；用于计算被保护或提前出场后错失的潜在利润
 - `pnl`：实际美元盈亏，可直接填写真实结果
 - `qty`：合约数量
 - `grade`：执行评分
+- `exitReason`：出场原因，如到目标、保护止损、保本、锁盈、结构失效
+- `managementTag`：交易管理标签，如按计划持有、推保护保本、推保护锁盈、过早保护
+- `managementReview`：盘后保护评价，如合理保护、过早保护、过晚保护、未按计划
 - `ruleBroken`：是否破规则，`true` 或 `false`，由人工手动标记
 - `ruleViolation`：违规标签（可选）
 - `emotionCause`：情绪原因
@@ -105,7 +119,7 @@ K 线数据保存方式：
 
 如果某些交易只有真实盈亏 `pnl`，没有 `entry`、`exit` 或 `initialStop`，网页不会报错。  
 这类交易仍会参与总盈亏、Profit Factor、Win Rate、数学期望、最大回撤等统计。  
-无法计算的点数和 Risk/Reward 会显示为 `-` 或保持空缺。
+无法计算的点数、Risk/Reward 和 Realized R 会显示为 `-` 或保持空缺。Realized R 必须有 `initialStop` 和 `qty` 才能按初始风险计算。
 
 ## 数据保存
 
