@@ -1483,10 +1483,48 @@
 
     const $ = (id) => document.getElementById(id);
 
+    function normalizeDateValue(value) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      const datePart = text.split(/\s+/)[0].replaceAll("/", "-");
+      const parts = datePart.split("-");
+      if (parts.length !== 3) return text;
+      const [year, month, day] = parts;
+      if (!year || !month || !day) return text;
+      return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+
+    function normalizeSessionValue(value, entryTime = "") {
+      const text = String(value || "").trim();
+      if (["美盘", "欧盘", "亚盘"].includes(text)) return text;
+      const h = Number(String(entryTime || "").split(":")[0]);
+      if (Number.isFinite(h) && (h >= 20 || h < 5)) return "美盘";
+      return inferSession(entryTime);
+    }
+
+    function normalizeSymbolValue(value) {
+      const text = String(value || "").trim().toUpperCase();
+      if (text.includes("MNQ") || text.includes("NQ")) return "NQ";
+      return text;
+    }
+
+    function normalizeTradeRecord(raw = {}) {
+      const t = {...raw};
+      t.date = normalizeDateValue(t.date || t.Date);
+      t.entryTime = String(t.entryTime || t.entry_time || "").slice(0, 5);
+      t.exitTime = String(t.exitTime || t.exit_time || "").slice(0, 5);
+      t.session = normalizeSessionValue(t.session, t.entryTime);
+      t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
+      t.symbol = normalizeSymbolValue(t.symbol);
+      if (t.side === "买入") t.side = "Long";
+      if (t.side === "卖出") t.side = "Short";
+      return t;
+    }
+
     function loadTrades() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return structuredClone(sampleTrades);
-      try { return JSON.parse(raw); } catch { return structuredClone(sampleTrades); }
+      try { return JSON.parse(raw).map(normalizeTradeRecord); } catch { return structuredClone(sampleTrades); }
     }
 
     function loadManuals() {
@@ -1585,7 +1623,7 @@
         setAuthStatus(`云端表未就绪：${firstError.message}`);
         return;
       }
-      const cloudTrades = (tradeRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
+      const cloudTrades = (tradeRes.data || []).map(row => normalizeTradeRecord({id: row.id, ...(row.data || {})}));
       const cloudLearning = (learningRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudKlines = Object.fromEntries((klineRes.data || []).map(row => [row.day, row.candles || []]));
       const cloudKlineDays = Object.keys(cloudKlines);
@@ -2710,10 +2748,12 @@
         const dt = p[0].trim().split(/\s+/);
         const seg = dt[0].split("-"); if (seg.length !== 3) return;
         const timePart = (dt[1] || "00:00:00").slice(0, 5);
-        const [y, dd, mm] = seg; // ATAS 导出为 年-日-月
+        const [y, a, b] = seg; // ATAS 常见为 年-日-月，也兼容 年-月-日
+        const aa = Number(a), bb = Number(b);
+        const [mm, dd] = aa <= 12 && bb > 12 ? [a, b] : [b, a];
         const o = parseFloat(p[1]), h = parseFloat(p[2]), l = parseFloat(p[3]), cl = parseFloat(p[4]);
         if (![o, h, l, cl].every(Number.isFinite)) return; // 跳过表头/坏行
-        const key = `${y}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+        const key = normalizeDateValue(`${y}-${mm}-${dd}`);
         (out[key] = out[key] || []).push([timePart, round2(o), round2(h), round2(l), round2(cl)]);
       });
       Object.values(out).forEach(arr => arr.sort((a, b) => a[0].localeCompare(b[0])));
@@ -3191,8 +3231,9 @@
     function parseCsv(text) {
       const rows = [];
       let row = [], cell = "", quote = false;
-      for (let i=0; i<text.length; i++) {
-        const ch = text[i], next = text[i+1];
+      const cleanText = String(text || "").replace(/^\uFEFF/, "");
+      for (let i=0; i<cleanText.length; i++) {
+        const ch = cleanText[i], next = cleanText[i+1];
         if (ch === '"' && quote && next === '"') { cell += '"'; i++; }
         else if (ch === '"') quote = !quote;
         else if (ch === "," && !quote) { row.push(cell); cell = ""; }
@@ -3202,13 +3243,13 @@
         } else cell += ch;
       }
       if (cell || row.length) { row.push(cell); rows.push(row); }
-      const headers = rows.shift()?.map(h => h.trim()) || [];
+      const headers = rows.shift()?.map(h => h.replace(/^\uFEFF/, "").trim()) || [];
       return rows.filter(r => r.some(Boolean)).map((r, idx) => {
         const o = {};
         headers.forEach((h, i) => o[h] = r[i] ?? "");
-        return {
+        return normalizeTradeRecord({
           id: o.id || "I" + Date.now() + idx,
-          date: o.date || o.Date || "",
+          date: o.date || o.Date || o["日期"] || "",
           entryTime: o.entryTime || o.entry_time || o["入场时间"] || "",
           exitTime: o.exitTime || o.exit_time || o["出场时间"] || "",
           session: o.session || o["时段"] || inferSession(o.entryTime || o.entry_time || ""),
@@ -3238,8 +3279,17 @@
           entrySignal: o.entrySignal || o.entry_signal || o["入场信号"] || "",
           entryReason: o.entryReason || o.entry_reason || o["入场点位选择原因"] || o["入场原因"] || "",
           notes: o.notes || o["备注"] || ""
-        };
+        });
       }).filter(t => t.date && t.symbol);
+    }
+
+    async function readCsvFileText(file) {
+      const bytes = await file.arrayBuffer();
+      try {
+        return new TextDecoder("utf-8", {fatal:true}).decode(bytes);
+      } catch {
+        return new TextDecoder("gb18030").decode(bytes);
+      }
     }
 
     function parseBool(v) {
@@ -3348,28 +3398,25 @@
     $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
     $("resetSample").addEventListener("click", async () => { trades = []; saveLocalOnly(); await clearCloudTrades(); render(); });
     $("klineResetZoom").addEventListener("click", () => { resetKlineViewport(); renderKline(); });
-    $("klineImport").addEventListener("change", e => {
+    $("klineImport").addEventListener("change", async e => {
       const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const parsed = parseAtasCsv(reader.result);
-          const dayKeys = Object.keys(parsed).sort();
-          if (!dayKeys.length) { $("klineImportNote").textContent = "未解析到 K 线数据，请检查是否为 ATAS 导出格式。"; return; }
-          const imported = loadKlineImported();
-          Object.assign(imported, parsed);
-          klineStore = Object.assign({}, KLINE_DATA, imported);
-          saveKlineLocalOnly();
-          if (currentUser && cloudReady) await saveCloudKlineData();
-          klineDay = dayKeys[dayKeys.length - 1];
-          resetKlineViewport();
-          $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天：${dayKeys.join("、")}`;
-          renderKline();
-        } catch (err) {
-          $("klineImportNote").textContent = "导入失败：" + err.message;
-        }
-      };
-      reader.readAsText(file);
+      try {
+        const text = await readCsvFileText(file);
+        const parsed = parseAtasCsv(text);
+        const dayKeys = Object.keys(parsed).sort();
+        if (!dayKeys.length) { $("klineImportNote").textContent = "未解析到 K 线数据，请检查是否为 ATAS 导出格式。"; return; }
+        const imported = loadKlineImported();
+        Object.assign(imported, parsed);
+        klineStore = Object.assign({}, KLINE_DATA, imported);
+        saveKlineLocalOnly();
+        if (currentUser && cloudReady) await saveCloudKlineData();
+        klineDay = dayKeys[dayKeys.length - 1];
+        resetKlineViewport();
+        $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天：${dayKeys.join("、")}`;
+        renderKline();
+      } catch (err) {
+        $("klineImportNote").textContent = "导入失败：" + err.message;
+      }
       e.target.value = "";
     });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
@@ -3415,7 +3462,7 @@
     $("csvInput").addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      const text = await file.text();
+      const text = await readCsvFileText(file);
       const rows = parseCsv(text);
       if (rows.length) {
         trades = rows;
