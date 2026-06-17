@@ -1774,7 +1774,7 @@
 
     function normalizeDayPart(value, time, session) {
       const v = String(value || "").trim();
-      if (v === "尾盘") return "晚盘";
+      if (v === "尾盘") return inferDayPart(time, session);
       if (["早盘", "午盘", "晚盘"].includes(v)) return v;
       return inferDayPart(time, session);
     }
