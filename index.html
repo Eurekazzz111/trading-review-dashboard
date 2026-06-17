@@ -1092,7 +1092,7 @@
             <section class="panel">
               <div class="panel-head">
                 <h3>交易段统计</h3>
-                <span class="meta">早盘 / 午盘 / 尾盘</span>
+                <span class="meta">早盘 / 午盘 / 晚盘</span>
               </div>
               <div class="table-wrap">
                 <div class="table-scroll">
@@ -1120,7 +1120,7 @@
             <div class="field"><label>入场时间</label><input id="entryTime" type="time"></div>
             <div class="field"><label>出场时间</label><input id="exitTime" type="time"></div>
             <div class="field"><label>时段</label><select id="session"><option>美盘</option><option>欧盘</option><option>亚盘</option></select></div>
-            <div class="field"><label>交易段</label><select id="dayPart"><option>早盘</option><option>午盘</option><option>尾盘</option></select></div>
+            <div class="field"><label>交易段</label><select id="dayPart"><option>早盘</option><option>午盘</option><option>晚盘</option></select></div>
             <div class="field"><label>品种</label><input id="symbol" placeholder="NQ / ES / MNQ"></div>
             <div class="field"><label>方向</label><select id="side"><option>Long</option><option>Short</option></select></div>
             <div class="field"><label>策略</label><input id="strategy" list="strategyOptions" placeholder="选择现有策略或输入新策略"><datalist id="strategyOptions"></datalist></div>
@@ -1763,9 +1763,10 @@
       if (!Number.isFinite(h)) return "早盘";
       const mins = h * 60 + m;
       if (session === "美盘") {
-        if (mins < 630) return "早盘";
-        if (mins < 780) return "午盘";
-        return "尾盘";
+        if (mins >= 1290 && mins < 1410) return "早盘";
+        if (mins >= 1410 || mins < 90) return "午盘";
+        if (mins >= 90 && mins <= 240) return "晚盘";
+        return "早盘";
       }
       if (session === "亚盘") return mins < 720 ? "早盘" : "午盘";
       return mins < 540 ? "早盘" : "午盘";
@@ -1773,7 +1774,8 @@
 
     function normalizeDayPart(value, time, session) {
       const v = String(value || "").trim();
-      if (["早盘", "午盘", "尾盘"].includes(v)) return v;
+      if (v === "尾盘") return "晚盘";
+      if (["早盘", "午盘", "晚盘"].includes(v)) return v;
       return inferDayPart(time, session);
     }
 
@@ -1940,7 +1942,7 @@
       const lists = {
         symbolFilter: unique(trades.map(t => t.symbol)),
         sessionFilter: unique(trades.map(t => t.session)),
-        dayPartFilter: unique(["早盘","午盘","尾盘", ...trades.map(t => derivedTrade(t).dayPart)]),
+        dayPartFilter: unique(["早盘","午盘","晚盘", ...trades.map(t => derivedTrade(t).dayPart)]),
         strategyFilter: unique(trades.map(t => t.strategy))
       };
       Object.entries(lists).forEach(([id, values]) => {
@@ -2194,7 +2196,7 @@
       if (h < 10) return "开盘前(<10)";
       if (h < 12) return "早盘(10-12)";
       if (h < 14) return "午盘(12-14)";
-      return "尾盘(≥14)";
+      return "晚盘(≥14)";
     }
 
     function scoreDrawdown(s) {
@@ -3079,7 +3081,7 @@
         ["策略偏差", weak ? `${weak.key} 是当前弱项，${weak.stats.trades} 笔，PF ${weak.stats.profitFactor === Infinity ? "∞" : num(weak.stats.profitFactor)}，净盈亏 ${money(weak.stats.total)}。` : "样本不足，暂不判定弱策略。"],
         ["优势来源", best ? `${best.key} 贡献最好，胜率 ${pct(best.stats.winRate)}，期望 ${money(best.stats.expectancy)}，平均 ${num(best.stats.avgPoints,2)} pts。优先扩大这个策略的高质量样本。` : "暂无足够优势样本。"],
         ["时段质量", badSession ? `${badSession.key} 时段表现最低，净盈亏 ${money(badSession.stats.total)}。如果该时段低于整体期望，下一周只保留高质量策略机会。` : "暂无时段数据。"],
-        ["交易段质量", weakPart ? `${weakPart.key} 表现最弱，净盈亏 ${money(weakPart.stats.total)}，平均持仓 ${num(weakPart.stats.avgHold,0)} 分钟。检查是否存在午盘低流动性硬做、早盘抢跑或尾盘追单。` : "暂无交易段数据。"],
+        ["交易段质量", weakPart ? `${weakPart.key} 表现最弱，净盈亏 ${money(weakPart.stats.total)}，平均持仓 ${num(weakPart.stats.avgHold,0)} 分钟。检查是否存在午盘低流动性硬做、早盘抢跑或晚盘追单。` : "暂无交易段数据。"],
         ["执行纪律", `${lowGradeLosses.length} 笔亏损交易执行评分 ≤2。建议把这些交易归档成错误标签：抢跑、追单、逆势、未等确认。`]
       ];
       $("aiReview").innerHTML = cards.map(([h,p]) => `<div class="ai-card"><h4>${h}</h4><p>${p}</p></div>`).join("");
