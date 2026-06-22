@@ -27,6 +27,7 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - 自动计算 Realized R、平均 Realized R、总 Realized R、盈亏比和目标错失利润
 - NQ 默认每点 20 美元，MNQ 默认每点 2 美元，ES 默认每点 50 美元，MES 默认每点 5 美元
 - Profit Factor、Win Rate、数学期望、Average Win / Average Loss（亏损统一显示为红色）
+- 完整绩效指标：Total/Net PnL、回撤日期、最大相对回撤、恢复因子、Gross/Total Profit & Loss、胜负天数、日均 PnL、最佳/最差交易、日度 Sharpe、日均笔数和最长连胜/连负
 - 每日总记录、周统计、月历统计
 - 累计盈亏曲线、每日盈亏柱状图
 - K 线图：导入 ATAS 当日 K 线 CSV，支持 1m / 5m 切换和鼠标滚轮缩放；只显示同时存在交易记录和 K 线数据的交易日，按进出场时间和点位自动标注交易
@@ -62,19 +63,22 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - 新增 `entryLocation` 开单位置字段：可复用历史位置名称，主页按位置统计胜率、PF、期望和样本状态。
 - 交易明细、当日 AI 复盘和 K 线图下方的当日交易记录会同步显示开单位置。
 - 备注改为通用自由记录，不再要求只在破规则时填写。
+- 新增每笔 `fees` 手续费与自动计算的 `netPnl`；胜率、PF、回撤、图表和复盘统一使用净盈亏。
+- 设置新增起始账户余额，用于准确计算最大相对回撤；未设置时该指标显示 `-`。
+- 总览新增截图所列的完整绩效指标，并补充 Recovery Factor、日度 Sharpe、日均交易频率和连续胜负。
 
 ## CSV 格式
 
 推荐字段：
 
 ```csv
-id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
+id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,fees,netPnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
 ```
 
 示例：
 
 ```csv
-T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
+T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,8,1992,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
 ```
 
 字段说明：
@@ -94,7 +98,9 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980
 - `riskReward`：Risk/Reward，可留空，网页会在能计算时自动计算
 - `realizedR`：实际 R，可留空，网页会用真实盈亏 / 初始风险美元自动计算
 - `targetReached`：后续是否到目标，`true` 或 `false`；用于计算被保护或提前出场后错失的潜在利润
-- `pnl`：实际美元盈亏，可直接填写真实结果
+- `pnl`：手续费前美元盈亏；如果导入值已经是净盈亏，请将 `fees` 留空
+- `fees`：手续费/佣金，填写正数，可留空
+- `netPnl`：净盈亏，网页按 `pnl - fees` 自动计算；导入时可留空
 - `qty`：合约数量
 - `grade`：执行评分
 - `exitReason`：出场原因，如到目标、保护止损、保本、锁盈、结构失效
@@ -135,6 +141,20 @@ K 线数据保存方式：
 
 旧交易没有 `entryLocation` 时仍可正常读取和统计其他指标，但不会进入开单位置统计；编辑旧交易并补填位置后会自动加入。
 
+## 绩效指标口径
+
+- `Total PnL`：手续费前盈亏总和。
+- `Net PnL`：`Total PnL - Fees`，胜率、Profit Factor、回撤、图表与复盘均按它计算。
+- `Gross Profit / Gross Loss`：手续费前盈利交易与亏损交易的合计。
+- `Total Profit / Total Loss`：按净盈亏划分的盈利交易与亏损交易合计。
+- `Max Drawdown Date`：交易级净值曲线发生最大金额回撤的日期。
+- `Max Relative Drawdown`：最大相对回撤；必须先在设置中填写起始账户余额。
+- `Recovery Factor`：`Net PnL / |Max Drawdown|`。
+- `Daily PnL`：每个有交易日的平均净盈亏。
+- `Sharpe Ratio`：日度净盈亏均值 / 日度样本标准差 × `sqrt(252)`；少于两个交易日显示 `-`。
+- `Winning Days %`：盈利交易日数 / 总交易日数。
+- `Win/Loss Ratio`：平均盈利 / 平均亏损。
+
 ## 数据保存
 
 当前版本支持两种模式：
@@ -142,6 +162,7 @@ K 线数据保存方式：
 - 未登录：交易数据保存在当前浏览器的 `localStorage`
 - 邮箱登录后：交易、策略手册、策略学习记录、设置、K 线数据会同步到 Supabase 云端数据库
 - 策略手册里的长文、关键词、入场规则、出场规则和失效条件都会保存到 `strategy_manuals` 表
+- 起始账户余额保存在云端设置中；手续费和净盈亏字段保存在每笔交易的 JSON 数据中，不需要修改 Supabase 表结构
 
 注意：
 

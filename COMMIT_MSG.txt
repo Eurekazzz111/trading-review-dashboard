@@ -1,9 +1,10 @@
-feat: add entry location tracking and statistics
+feat: add complete performance metrics
 
-- Add entryLocation to the trade form with reusable historical location options
-- Normalize common market-profile abbreviations for consistent grouping
-- Add dashboard location statistics for sample count, win rate, PF, expectancy and net P&L
-- Show entry location in the trade table, daily review and K-line trade cards
-- Import and export entryLocation in CSV while keeping older trade rows compatible
-- Make notes a general free-form field instead of tying them to rule violations
-- Update the CSV example and README documentation
+- Add per-trade fees and derived netPnl while keeping older trades compatible
+- Add starting balance setting for mathematically correct relative drawdown
+- Calculate drawdown date, relative drawdown, recovery factor and daily Sharpe
+- Add profit/loss days, winning days rate, daily P&L, best/worst trade and trade frequency
+- Add a complete performance metrics panel to the dashboard
+- Use net P&L consistently for win rate, PF, drawdown, charts and reviews
+- Show gross P&L, fees and net P&L in the trade table
+- Update CSV example, README and metric definitions
