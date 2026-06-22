@@ -1118,6 +1118,17 @@
             </section>
           </div>
         </div>
+        <section class="panel" style="margin-top:14px;">
+          <div class="panel-head">
+            <h3>开单位置统计</h3>
+            <span class="meta">胜率 / PF / 期望 · 样本量不等同统计显著性</span>
+          </div>
+          <div class="table-wrap">
+            <div class="table-scroll">
+              <table id="entryLocationStats"></table>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section id="trades" class="view">
@@ -1140,6 +1151,7 @@
             <div class="field"><label>品种</label><input id="symbol" placeholder="NQ / ES / MNQ"></div>
             <div class="field"><label>方向</label><select id="side"><option>Long</option><option>Short</option></select></div>
             <div class="field"><label>策略</label><input id="strategy" list="strategyOptions" placeholder="选择现有策略或输入新策略"><datalist id="strategyOptions"></datalist></div>
+            <div class="field"><label>开单位置</label><input id="entryLocation" list="entryLocationOptions" placeholder="如：VAH / VAL / POC / VWAP / LVP"><datalist id="entryLocationOptions"></datalist></div>
             <div class="field"><label>入场价</label><input id="entry" type="number" step="0.01"></div>
             <div class="field"><label>Initial Stop</label><input id="initialStop" type="number" step="0.01"></div>
             <div class="field"><label>目标价</label><input id="targetPrice" type="number" step="0.01"></div>
@@ -1160,7 +1172,7 @@
             <div class="field"><label>情绪原因</label><select id="emotionCause"><option></option><option>FOMO</option><option>复仇交易</option><option>害怕亏损</option><option>过度自信</option><option>犹豫</option><option>疲劳</option></select></div>
             <div class="field wide"><label>入场信号</label><input id="entrySignal" placeholder="如：5m 收回 / 吸收反转 / 失败突破回区间"></div>
             <div class="field full"><label>入场点位选择原因</label><input id="entryReason" placeholder="为什么在这个点位进场：结构 / 关键位 / 订单流依据"></div>
-            <div class="field full"><label>备注（破规则时在此写明理由）</label><textarea id="notes" placeholder="例如：午盘逆势抢反弹，没等 5m 确认"></textarea></div>
+            <div class="field full"><label>备注</label><textarea id="notes" placeholder="可记录任何补充内容、盘中观察或复盘想法"></textarea></div>
           </div>
         </section>
         <section class="panel" style="margin-top:14px;">
@@ -1536,6 +1548,11 @@
       return text;
     }
 
+    function normalizeEntryLocation(value) {
+      return String(value || "").trim().replace(/\s+/g, " ")
+        .replace(/\b(vwap|poc|vah|val|lvp|lvn|hvn|hgn|lgn)\b/gi, token => token.toUpperCase());
+    }
+
     function normalizeTradeRecord(raw = {}) {
       const t = {...raw};
       t.date = normalizeDateValue(t.date || t.Date);
@@ -1544,6 +1561,7 @@
       t.session = normalizeSessionValue(t.session, t.entryTime);
       t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
       t.symbol = normalizeSymbolValue(t.symbol);
+      t.entryLocation = normalizeEntryLocation(t.entryLocation || t.entry_location || t.location);
       if (t.side === "买入") t.side = "Long";
       if (t.side === "卖出") t.side = "Short";
       return t;
@@ -1905,6 +1923,7 @@
       t.missedProfit = missedPoints && t.pointValue && qty ? missedPoints * t.pointValue * qty : 0;
       t.holdingMinutes = toNum(t.holdingMinutes) ?? minutesBetween(t.date, t.entryTime, t.exitTime);
       t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
+      t.entryLocation = normalizeEntryLocation(t.entryLocation);
       t.ruleBroken = raw.ruleBroken === true || raw.ruleBroken === "true" || raw.ruleBroken === 1 || raw.ruleBroken === "1";
       t.ruleViolation = t.ruleViolation || "";
       t.emotionCause = t.emotionCause || "";
@@ -1914,7 +1933,7 @@
       return t;
     }
 
-    // 是否破规则完全由用户手动标记，破规则的理由写在备注里，代码不再自动推断。
+    // 是否破规则完全由用户手动标记；备注保留为通用自由记录，代码不再自动推断。
 
     function filteredTrades() {
       const from = $("fromDate").value;
@@ -2054,6 +2073,13 @@
       el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join("");
     }
 
+    function renderEntryLocationOptions() {
+      const el = $("entryLocationOptions");
+      if (!el) return;
+      const values = unique(trades.map(t => normalizeEntryLocation(t.entryLocation))).filter(Boolean);
+      el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join("");
+    }
+
     function renderKpis(list) {
       const s = calcStats(list);
       const pf = s.profitFactor === Infinity ? "∞" : num(s.profitFactor);
@@ -2095,12 +2121,36 @@
     function renderTables(list) {
       renderAggTable("strategyStats", aggregateBy(list, t => t.strategy), "策略");
       renderAggTable("dayPartStats", aggregateBy(list, t => t.dayPart), "交易段");
+      renderEntryLocationStats(list);
       renderTradeTable(list);
       renderDailyWeekly(list);
       renderDisciplineStats(list);
       renderHoldStats(list);
       renderCalendar(list);
       renderDailyAiReview(list);
+    }
+
+    function renderEntryLocationStats(list) {
+      const rows = aggregateBy(list.filter(t => normalizeEntryLocation(t.entryLocation)), t => normalizeEntryLocation(t.entryLocation))
+        .sort((a, b) => b.stats.trades - a.stats.trades || b.stats.winRate - a.stats.winRate || b.stats.total - a.stats.total);
+      const sampleState = count => count >= 20
+        ? ["样本较充分", "green"]
+        : count >= 8 ? ["继续观察", "blue"] : ["样本不足", "violet"];
+      const head = `<thead><tr><th>开单位置</th><th class="num">交易</th><th class="num">胜率</th><th class="num">PF</th><th class="num">期望</th><th class="num">净盈亏</th><th>样本状态</th></tr></thead>`;
+      const body = rows.length ? rows.map(r => {
+        const s = r.stats;
+        const [label, cls] = sampleState(s.trades);
+        return `<tr>
+          <td><span class="pill blue">${escapeHtml(r.key)}</span></td>
+          <td class="num">${s.trades}</td>
+          <td class="num">${pct(s.winRate)}</td>
+          <td class="num">${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td>
+          <td class="num ${pnlClass(s.expectancy)}">${money(s.expectancy)}</td>
+          <td class="num ${pnlClass(s.total)}">${money(s.total)}</td>
+          <td><span class="pill ${cls}">${label}</span></td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="7" class="empty">尚未记录开单位置</td></tr>`;
+      $("entryLocationStats").innerHTML = head + `<tbody>${body}</tbody>`;
     }
 
     function renderAggTable(id, rows, title) {
@@ -2123,7 +2173,7 @@
     function renderTradeTable(list) {
       $("tradeCount").textContent = list.length + " 笔";
       const head = `<thead><tr>
-        <th>日期</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th>
+        <th>日期</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th><th>开单位置</th>
         <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">目标</th><th class="num">出场</th><th class="num">点数</th><th class="num">盈亏</th><th class="num">Risk/Reward</th><th class="num">Realized R</th><th class="num">错失</th><th class="num">持仓</th><th>管理</th><th>纪律</th><th>违规/情绪</th><th></th>
       </tr></thead>`;
       const body = list.length ? list.map(raw => {
@@ -2135,6 +2185,7 @@
         <td>${escapeHtml(t.symbol)}</td>
         <td><span class="pill ${t.side === "Long" ? "green" : "red"}">${escapeHtml(t.side)}</span></td>
         <td>${escapeHtml(t.strategy)}</td>
+        <td>${escapeHtml(t.entryLocation || "-")}</td>
         <td class="num">${num(t.entry, 2)}</td>
         <td class="num">${num(t.initialStop, 2)}</td>
         <td class="num">${num(t.targetPrice, 2)}</td>
@@ -2150,7 +2201,7 @@
         <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
         <td><button class="icon" data-edit="${t.id}">✎</button></td>
       </tr>`;
-      }).join("") : `<tr><td colspan="20" class="empty">无记录</td></tr>`;
+      }).join("") : `<tr><td colspan="21" class="empty">无记录</td></tr>`;
       $("tradeTable").innerHTML = head + `<tbody>${body}</tbody>`;
       document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => editTrade(btn.dataset.edit)));
     }
@@ -2278,7 +2329,7 @@
         worst ? `最大亏损来自 ${worst.strategy || "-"}，持仓 ${num(worst.holdingMinutes,0)}m。` : ""
       ];
       $("dailyAiReview").innerHTML = `<div class="ai-card"><h4>${selectedDay} 复盘</h4><p>${points.filter(Boolean).join(" ")}</p></div>` +
-        rows.map(t => `<div class="ai-card"><h4>${escapeHtml(t.entryTime)} ${escapeHtml(t.symbol)} ${escapeHtml(t.side)}</h4><p>${escapeHtml(t.strategy)} · <span class="${pnlClass(t.pnl)}">${money(t.pnl)}</span> · ${num(t.points,1)} pts · ${num(t.holdingMinutes,0)}m${derivedTrade(t).ruleBroken ? ` · 破规则: ${escapeHtml(derivedTrade(t).ruleViolation || "未标注")}` : ""}${t.emotionCause ? ` · 情绪: ${escapeHtml(t.emotionCause)}` : ""}</p></div>`).join("");
+        rows.map(t => `<div class="ai-card"><h4>${escapeHtml(t.entryTime)} ${escapeHtml(t.symbol)} ${escapeHtml(t.side)}</h4><p>${escapeHtml(t.strategy)}${t.entryLocation ? ` · 位置: ${escapeHtml(t.entryLocation)}` : ""} · <span class="${pnlClass(t.pnl)}">${money(t.pnl)}</span> · ${num(t.points,1)} pts · ${num(t.holdingMinutes,0)}m${derivedTrade(t).ruleBroken ? ` · 破规则: ${escapeHtml(derivedTrade(t).ruleViolation || "未标注")}` : ""}${t.emotionCause ? ` · 情绪: ${escapeHtml(t.emotionCause)}` : ""}</p></div>`).join("");
     }
 
     function hourBlock(t) {
@@ -2870,6 +2921,7 @@
               <span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span>
               <span class="small-note">${escapeHtml(t.entryTime || "")} → ${escapeHtml(t.exitTime || "")}</span>
             </div>
+            ${fld("开单位置", t.entryLocation)}
             ${fld("入场信号", t.entrySignal)}
             ${fld("入场点位选择原因", t.entryReason)}
             ${fld("备注", t.notes)}
@@ -3232,7 +3284,7 @@
 
     function renderRoadmap() {
       const items = [
-        ["导入模板锁定", "固定 CSV 字段：id, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entry, initialStop, targetPrice, exit, riskReward, realizedR, targetReached, pnl, qty, grade, exitReason, managementTag, managementReview, ruleBroken, ruleViolation, emotionCause, notes。点数、美元、Risk/Reward、Realized R 和持仓时间自动计算；pnl、riskReward 和 realizedR 可留空，也可以只填真实 pnl。"],
+        ["导入模板锁定", "固定 CSV 字段：id, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entryLocation, entry, initialStop, targetPrice, exit, riskReward, realizedR, targetReached, pnl, qty, grade, exitReason, managementTag, managementReview, ruleBroken, ruleViolation, emotionCause, notes。点数、美元、Risk/Reward、Realized R 和持仓时间自动计算；pnl、riskReward 和 realizedR 可留空，也可以只填真实 pnl。"],
         ["截图归档", "每笔交易追加入场图、出场图、复盘图，后续可按策略自动筛选错误截图。"],
         ["MAE/MFE", "记录最大浮亏点数和最大浮盈点数，判断止损是否太紧、止盈是否太早。"],
         ["手续费与滑点", "按品种配置手续费、滑点和每点美元，区分毛盈亏和净盈亏。"],
@@ -3246,7 +3298,7 @@
     function fillTradeForm(t = {}) {
       t = t.id ? derivedTrade(t) : t;
       manualDayPartTouched = Boolean(t.dayPart);
-      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","targetPrice","exit","qty","points","pnl","riskReward","realizedR","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
+      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","riskReward","realizedR","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
         const key = id === "tradeId" ? "id" : id;
         if ($(id)) $(id).value = t[key] ?? "";
       });
@@ -3301,6 +3353,7 @@
         symbol: $("symbol").value.trim(),
         side: $("side").value,
         strategy: $("strategy").value.trim(),
+        entryLocation: normalizeEntryLocation($("entryLocation").value),
         entry: toNum($("entry").value) ?? "",
         initialStop: toNum($("initialStop").value) ?? "",
         targetPrice: toNum($("targetPrice").value) ?? "",
@@ -3402,6 +3455,7 @@
           symbol: o.symbol || o["品种"] || "",
           side: o.side || o["方向"] || "Long",
           strategy: o.strategy || o["策略"] || "",
+          entryLocation: o.entryLocation || o.entry_location || o.location || o["开单位置"] || o["入场位置"] || "",
           entry: o.entry || o["入场价"] || "",
           initialStop: o.initialStop || o.initial_stop || o.stop || o["初始止损"] || o["止损价"] || "",
           targetPrice: o.targetPrice || o.target_price || o.target || o["目标价"] || o["止盈价"] || "",
@@ -3451,7 +3505,7 @@
     }
 
     function exportCsv() {
-      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","targetPrice","exit","riskReward","realizedR","targetReached","pnl","qty","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
+      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","riskReward","realizedR","targetReached","pnl","qty","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
       const lines = [headers.join(",")].concat(trades.map(t => derivedTrade(t)).map(t => headers.map(h => csvCell(t[h])).join(",")));
       const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
       const url = URL.createObjectURL(blob);
@@ -3526,6 +3580,7 @@
     function render() {
       renderFilters();
       renderStrategyOptions();
+      renderEntryLocationOptions();
       const list = filteredTrades();
       renderKpis(list);
       renderTables(list);
@@ -3568,7 +3623,7 @@
     });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
     $("calcTrade").addEventListener("click", () => { computeTradeFields(true); syncOpenTradeDraft(); });
-    const tradeSyncFields = ["date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entry","initialStop","targetPrice","exit","qty","points","pnl","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
+    const tradeSyncFields = ["date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
     tradeSyncFields.forEach(id => $(id).addEventListener("input", () => syncOpenTradeDraft()));
     tradeSyncFields.forEach(id => $(id).addEventListener("change", () => syncOpenTradeDraft()));
     $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; syncOpenTradeDraft(); });

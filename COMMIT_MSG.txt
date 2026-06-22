@@ -1,9 +1,9 @@
-feat: organize K-line review by traded days
+feat: add entry location tracking and statistics
 
-- Only show chart dates that have both trade records and imported K-line data
-- Hide the chart, order path and trade detail panel when no matching trade day exists
-- Add year/month navigation with a compact monthly trade-day grid
-- Keep imported non-trade dates stored but hidden until a trade is recorded for that date
-- Migrate local K-line persistence from localStorage to IndexedDB for longer 1m history
-- Keep the existing Supabase kline_days schema and cloud sync format compatible
-- Update README with the new display and storage behavior
+- Add entryLocation to the trade form with reusable historical location options
+- Normalize common market-profile abbreviations for consistent grouping
+- Add dashboard location statistics for sample count, win rate, PF, expectancy and net P&L
+- Show entry location in the trade table, daily review and K-line trade cards
+- Import and export entryLocation in CSV while keeping older trade rows compatible
+- Make notes a general free-form field instead of tying them to rule violations
+- Update the CSV example and README documentation

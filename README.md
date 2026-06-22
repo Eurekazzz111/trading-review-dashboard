@@ -32,8 +32,9 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - K 线图：导入 ATAS 当日 K 线 CSV，支持 1m / 5m 切换和鼠标滚轮缩放；只显示同时存在交易记录和 K 线数据的交易日，按进出场时间和点位自动标注交易
 - K 线历史按年份/月归档，每次只排列当月有交易的日期，适合持续记录数月或数年
 - 按策略、盘段、方向、纪律执行统计
+- 开单位置记录与统计：按位置显示样本数、胜率、Profit Factor、数学期望和净盈亏
 - 入场信号、入场点位选择原因记录；规则违规标签和情绪原因记录
-- 破规则由人工手动标记（不再按执行评分自动推断），破规则理由写在备注里
+- 破规则由人工手动标记（不再按执行评分自动推断）；备注可记录任何补充内容
 - 策略手册支持手动维护关键词；左侧策略列表、右侧关键词复习和核心分析会同步显示，并保持同一关键词同一颜色
 - 策略学习页：按大策略分类记录大段思考、反思、新知识和格外注意点，方便持续复习
 - 策略手册关键词改为手动填写并同步显示；相同关键词在不同区域保持同色，方便复习
@@ -58,19 +59,22 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - K 线页面只列出有交易且已导入 K 线的日期；无交易日不再显示空 K 线图或订单轨迹。
 - K 线日期导航改为按年月归档和当月交易日网格，跨月、跨年记录仍能保持整齐。
 - 未登录时的 K 线数据从 `localStorage` 自动迁移到 IndexedDB，提升多年 1 分钟历史数据的本机容量；Supabase 云端表结构保持不变。
+- 新增 `entryLocation` 开单位置字段：可复用历史位置名称，主页按位置统计胜率、PF、期望和样本状态。
+- 交易明细、当日 AI 复盘和 K 线图下方的当日交易记录会同步显示开单位置。
+- 备注改为通用自由记录，不再要求只在破规则时填写。
 
 ## CSV 格式
 
 推荐字段：
 
 ```csv
-id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
+id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
 ```
 
 示例：
 
 ```csv
-T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,22050,22050,2.50,2.50,true,2000,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
+T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
 ```
 
 字段说明：
@@ -82,6 +86,7 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,220
 - `symbol`：NQ、MNQ、ES、MES
 - `side`：Long 或 Short
 - `strategy`：策略名称
+- `entryLocation`：开单位置，如 VAH、VAL、POC、VWAP、LVP、前高/前低等；建议复用已有名称以保证统计一致
 - `entry`：入场价，可留空
 - `initialStop`：初始止损价，可留空
 - `targetPrice`：计划目标价/止盈价，可留空
@@ -100,7 +105,7 @@ T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,22000,21980,220
 - `emotionCause`：情绪原因
 - `entrySignal`：入场信号（如 5m 收回 / 吸收反转 / 失败突破）
 - `entryReason`：入场点位选择原因（结构 / 关键位 / 订单流依据）
-- `notes`：备注；破规则时在此写明理由
+- `notes`：通用备注，可记录任何补充内容、盘中观察或复盘想法
 
 ## K 线图与进出场标记
 
@@ -109,7 +114,7 @@ K 线图页面用来把每笔交易画到当天的行情上复盘。
 1. 在交易日志或 CSV 里录入当天的交易（含入场/出场时间、入场/出场点位）。
 2. 在 K 线图页面点「导入当日 K 线 (ATAS CSV)」，导入从 ATAS 导出的当日 K 线文件。
 3. 网页只会列出“有交易记录 + 已导入 K 线”的日期；没有交易的日期不会显示 K 线图和订单轨迹。
-4. 先选择年份/月，再选择当月交易日。当天交易会按进出场时间和点位自动画在 K 线上，进出场按顺序编号 ①②③；图下方按相同顺序列出每笔交易的策略、入场信号、入场点位选择原因和备注。
+4. 先选择年份/月，再选择当月交易日。当天交易会按进出场时间和点位自动画在 K 线上，进出场按顺序编号 ①②③；图下方按相同顺序列出每笔交易的策略、开单位置、入场信号、入场点位选择原因和备注。
 
 ATAS 导出格式为 `年-日-月;开;高;低;收`（分号分隔，可含多天，无表头）。
 
@@ -127,6 +132,8 @@ K 线数据保存方式：
 如果某些交易只有真实盈亏 `pnl`，没有 `entry`、`exit` 或 `initialStop`，网页不会报错。  
 这类交易仍会参与总盈亏、Profit Factor、Win Rate、数学期望、最大回撤等统计。  
 无法计算的点数、Risk/Reward 和 Realized R 会显示为 `-` 或保持空缺。Realized R 必须有 `initialStop` 和 `qty` 才能按初始风险计算。
+
+旧交易没有 `entryLocation` 时仍可正常读取和统计其他指标，但不会进入开单位置统计；编辑旧交易并补填位置后会自动加入。
 
 ## 数据保存
 
