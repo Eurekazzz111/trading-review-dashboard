@@ -377,8 +377,17 @@
     .kline-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
     .kline-toolbar button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
     .kline-toolbar .hint { color: var(--muted); font-size: 12px; }
-    .kline-days { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .kline-data[hidden], .kline-trade-panel[hidden] { display: none !important; }
+    .kline-month-nav { display: grid; grid-template-columns: auto minmax(160px, 220px) auto 1fr; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .kline-month-nav select { height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); padding: 0 10px; }
+    .kline-month-nav .small-note { justify-self: end; }
+    .kline-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 7px; margin-bottom: 12px; }
+    .kline-days button { min-width: 0; min-height: 46px; display: grid; place-items: center; gap: 2px; padding: 6px 8px; }
+    .kline-days button small { color: var(--muted); font-size: 11px; font-weight: 500; }
     .kline-days button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .kline-days button.on small { color: #d9ddd9; }
+    .kline-empty-state { border: 1px dashed var(--line); border-radius: 8px; padding: 28px 18px; text-align: center; color: var(--muted); background: #fbfaf7; }
+    .kline-empty-state strong { display: block; color: var(--ink); margin-bottom: 6px; }
     .kline-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 12px; }
     .kline-legend i { font-style: normal; font-weight: 800; }
     .kline-trades { display: grid; gap: 10px; }
@@ -393,7 +402,13 @@
     .kt-right { text-align: right; white-space: nowrap; font-weight: 800; }
     .kt-right .small-note { font-weight: 400; }
     .kt-empty { color: var(--muted); font-size: 13px; }
-    @media (max-width: 560px) { .kt-card { grid-template-columns: 26px 1fr; } .kt-right { grid-column: 2; text-align: left; } }
+    @media (max-width: 560px) {
+      .kt-card { grid-template-columns: 26px 1fr; }
+      .kt-right { grid-column: 2; text-align: left; }
+      .kline-month-nav { grid-template-columns: auto 1fr auto; }
+      .kline-month-nav .small-note { grid-column: 1 / -1; justify-self: start; }
+      .kline-days { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
 
     .tables {
       display: grid;
@@ -909,7 +924,8 @@
       .form-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
     }
     @media (max-width: 900px) {
-      .app { grid-template-columns: 1fr; }
+      .app { grid-template-columns: minmax(0, 1fr); width: 100%; overflow-x: hidden; }
+      .side, .content { min-width: 0; width: 100%; max-width: 100vw; }
       .side { position: static; height: auto; overflow: visible; border-right: 0; border-bottom: 1px solid #d2cabe; padding: 14px 16px; }
       .nav { grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; padding-bottom: 4px; }
       .nav button { width: auto; white-space: nowrap; }
@@ -1173,26 +1189,35 @@
             </label>
             <span class="small-note" id="klineImportNote">支持 ATAS 导出格式：年-日-月;开;高;低;收（分号分隔，可含多天）</span>
           </div>
-          <div class="kline-toolbar">
-            <span class="small-note">周期</span>
-            <button data-ktf="1" class="on">1m</button>
-            <button data-ktf="5">5m</button>
-            <button id="klineResetZoom">重置缩放</button>
-            <span class="hint">鼠标滚轮缩放，鼠标悬停位置为缩放中心</span>
-          </div>
-          <div class="kline-days" id="klineDays"></div>
-          <canvas id="klineChart"></canvas>
-          <div class="kline-legend">
-            <span><i style="color:#148a5b">▲</i> 多单进场</span>
-            <span><i style="color:#bd3b3b">▼</i> 空单进场</span>
-            <span><i style="color:#148a5b">▼</i> 多单出场</span>
-            <span><i style="color:#bd3b3b">▲</i> 空单出场</span>
-            <span><i style="color:#148a5b">—</i> 盈利连线</span>
-            <span><i style="color:#bd3b3b">—</i> 亏损连线</span>
-            <span class="small-note">进出场标记按当日交易顺序标注 ①②③，并落在对应 K 线上</span>
+          <div class="kline-empty-state" id="klineEmptyState" hidden></div>
+          <div class="kline-data" id="klineDataContent">
+            <div class="kline-month-nav">
+              <button class="icon" id="klinePrevMonth" title="上一个有交易的月份" aria-label="上一个有交易的月份">‹</button>
+              <select id="klineMonthSelect" aria-label="选择交易月份"></select>
+              <button class="icon" id="klineNextMonth" title="下一个有交易的月份" aria-label="下一个有交易的月份">›</button>
+              <span class="small-note" id="klineDayCount"></span>
+            </div>
+            <div class="kline-toolbar">
+              <span class="small-note">周期</span>
+              <button data-ktf="1" class="on">1m</button>
+              <button data-ktf="5">5m</button>
+              <button id="klineResetZoom">重置缩放</button>
+              <span class="hint">鼠标滚轮缩放，鼠标悬停位置为缩放中心</span>
+            </div>
+            <div class="kline-days" id="klineDays"></div>
+            <canvas id="klineChart"></canvas>
+            <div class="kline-legend">
+              <span><i style="color:#148a5b">▲</i> 多单进场</span>
+              <span><i style="color:#bd3b3b">▼</i> 空单进场</span>
+              <span><i style="color:#148a5b">▼</i> 多单出场</span>
+              <span><i style="color:#bd3b3b">▲</i> 空单出场</span>
+              <span><i style="color:#148a5b">—</i> 盈利连线</span>
+              <span><i style="color:#bd3b3b">—</i> 亏损连线</span>
+              <span class="small-note">进出场标记按当日交易顺序标注 ①②③，并落在对应 K 线上</span>
+            </div>
           </div>
         </section>
-        <section class="panel" style="margin-top:14px;">
+        <section class="panel kline-trade-panel" id="klineTradePanel" style="margin-top:14px;">
           <div class="panel-head">
             <h3>当日交易记录（按顺序）</h3>
             <span class="meta" id="klineTradeMeta"></span>
@@ -1461,12 +1486,15 @@
 
     const KLINE_DATA = {};
     const KLINE_KEY = "trading-review-kline-v1";
+    const KLINE_DB_NAME = "trading-review-kline-db";
+    const KLINE_DB_STORE = "days";
     function loadKlineImported() { try { return JSON.parse(localStorage.getItem(KLINE_KEY)) || {}; } catch { return {}; } }
-    function saveKlineLocalOnly() { localStorage.setItem(KLINE_KEY, JSON.stringify(klineStore)); }
     let klineStore = Object.assign({}, KLINE_DATA, loadKlineImported());
     let klineDay = "";
+    let klineMonth = "";
     let klineTimeframe = 1;
     let klineViewport = {key:"", start:0, end:0};
+    const klineStorageReady = hydrateKlineStorage();
 
     let trades = loadTrades();
     let manuals = loadManuals();
@@ -1546,6 +1574,68 @@
       try { return {...defaults, ...JSON.parse(raw)}; } catch { return defaults; }
     }
 
+    function openKlineDb() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error("IndexedDB unavailable"));
+        const request = indexedDB.open(KLINE_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(KLINE_DB_STORE)) db.createObjectStore(KLINE_DB_STORE, {keyPath:"day"});
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+      });
+    }
+
+    async function loadKlineIndexedDb() {
+      const db = await openKlineDb();
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(KLINE_DB_STORE, "readonly");
+          const request = tx.objectStore(KLINE_DB_STORE).getAll();
+          request.onsuccess = () => resolve(Object.fromEntries((request.result || []).map(row => [row.day, row.candles || []])));
+          request.onerror = () => reject(request.error || new Error("IndexedDB read failed"));
+        });
+      } finally {
+        db.close();
+      }
+    }
+
+    async function saveKlineLocalOnly(days = klineStore) {
+      const entries = Object.entries(days || {}).filter(([, candles]) => Array.isArray(candles) && candles.length);
+      if (!entries.length) return;
+      try {
+        const db = await openKlineDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(KLINE_DB_STORE, "readwrite");
+          const store = tx.objectStore(KLINE_DB_STORE);
+          entries.forEach(([day, candles]) => store.put({day, candles}));
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed"));
+          tx.onabort = () => reject(tx.error || new Error("IndexedDB write aborted"));
+        });
+        db.close();
+      } catch {
+        // Older browsers fall back to the previous storage format.
+        localStorage.setItem(KLINE_KEY, JSON.stringify(klineStore));
+      }
+    }
+
+    async function hydrateKlineStorage() {
+      const legacy = loadKlineImported();
+      try {
+        const indexed = await loadKlineIndexedDb();
+        klineStore = Object.assign({}, KLINE_DATA, legacy, indexed);
+        if (Object.keys(legacy).length) {
+          await saveKlineLocalOnly(klineStore);
+          localStorage.removeItem(KLINE_KEY);
+        }
+      } catch {
+        klineStore = Object.assign({}, KLINE_DATA, legacy);
+      }
+      renderKline();
+    }
+
     function saveAll() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
@@ -1560,6 +1650,7 @@
     }
 
     async function initAuth() {
+      await klineStorageReady;
       if (!supabaseClient) {
         setAuthStatus("Supabase SDK 未加载，本机保存");
         return;
@@ -1632,6 +1723,7 @@
       if (cloudLearning.length || !learningNotes.length) learningNotes = cloudLearning;
       if (settingsRes.data?.data) settings = {...settings, ...settingsRes.data.data};
       if (cloudKlineDays.length || !Object.keys(klineStore).length) klineStore = Object.assign({}, KLINE_DATA, cloudKlines);
+      if (cloudKlineDays.length) await saveKlineLocalOnly(cloudKlines);
       cloudReady = true;
       if (!cloudTrades.length && trades.length) await saveCloudData();
       if (!cloudLearning.length && learningNotes.length) await saveCloudData();
@@ -1646,7 +1738,6 @@
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
       localStorage.setItem(LEARNING_KEY, JSON.stringify(learningNotes));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      saveKlineLocalOnly();
     }
 
     async function saveCloudData() {
@@ -2503,16 +2594,68 @@
     }
 
     function renderKline() {
-      const days = Object.keys(klineStore).sort();
+      const filtered = filteredTrades();
+      const tradeCounts = new Map();
+      filtered.forEach(t => {
+        if (t.date) tradeCounts.set(t.date, (tradeCounts.get(t.date) || 0) + 1);
+      });
+      const storedDays = Object.keys(klineStore).filter(day => Array.isArray(klineStore[day]) && klineStore[day].length).sort();
+      const days = storedDays.filter(day => tradeCounts.has(day));
+      const months = [...new Set(days.map(day => day.slice(0, 7)))].sort();
       document.querySelectorAll("[data-ktf]").forEach(b => {
         b.classList.toggle("on", Number(b.dataset.ktf) === klineTimeframe);
         b.onclick = () => { klineTimeframe = Number(b.dataset.ktf) || 1; resetKlineViewport(); renderKline(); };
       });
-      if (!days.length) { $("klineDays").innerHTML = `<span class="small-note">未内置 K 线数据。</span>`; return; }
-      if (!klineDay || !klineStore[klineDay]) klineDay = days[days.length - 1];
-      $("klineDays").innerHTML = days.map(d => `<button data-kday="${d}" class="${d === klineDay ? "on" : ""}">${d.slice(5)}</button>`).join("");
+      const hasDisplayDays = days.length > 0;
+      $("klineDataContent").hidden = !hasDisplayDays;
+      $("klineTradePanel").hidden = !hasDisplayDays;
+      $("klineEmptyState").hidden = hasDisplayDays;
+      if (!hasDisplayDays) {
+        klineDay = "";
+        klineMonth = "";
+        const filteredTradeDays = tradeCounts.size;
+        $("klineMeta").textContent = storedDays.length ? `已保存 ${storedDays.length} 天 K 线` : "";
+        $("klineEmptyState").innerHTML = storedDays.length
+          ? `<strong>当前没有可显示的交易日 K 线</strong>已保存 ${storedDays.length} 天 K 线，当前筛选范围有 ${filteredTradeDays} 个交易日。只有同时存在交易记录和 K 线数据的日期才会显示图表与订单轨迹。`
+          : `<strong>还没有可显示的交易日 K 线</strong>请先记录交易，再导入对应日期的 ATAS K 线 CSV。没有交易的日期不会显示图表或订单轨迹。`;
+        const c = $("klineChart"), ctx = c.getContext("2d");
+        clearCanvas(c, ctx);
+        c.onmousemove = null; c.onmouseleave = null; c.onwheel = null;
+        return;
+      }
+      if (!klineDay || !days.includes(klineDay)) klineDay = days[days.length - 1];
+      if (!klineMonth || !months.includes(klineMonth)) klineMonth = klineDay.slice(0, 7);
+      const monthDays = days.filter(day => day.startsWith(klineMonth));
+      if (!monthDays.includes(klineDay)) klineDay = monthDays[monthDays.length - 1];
+      const monthIndex = months.indexOf(klineMonth);
+      $("klineMonthSelect").innerHTML = months.map(month => {
+        const [year, value] = month.split("-");
+        const count = days.filter(day => day.startsWith(month)).length;
+        return `<option value="${month}" ${month === klineMonth ? "selected" : ""}>${year}年${Number(value)}月 · ${count} 个交易日</option>`;
+      }).join("");
+      $("klinePrevMonth").disabled = monthIndex <= 0;
+      $("klineNextMonth").disabled = monthIndex >= months.length - 1;
+      $("klineDayCount").textContent = `共 ${days.length} 个可复盘交易日 · 本月 ${monthDays.length} 天`;
+      $("klineMonthSelect").onchange = e => {
+        klineMonth = e.target.value;
+        const targetDays = days.filter(day => day.startsWith(klineMonth));
+        klineDay = targetDays[targetDays.length - 1] || "";
+        resetKlineViewport(); renderKline();
+      };
+      $("klinePrevMonth").onclick = () => selectKlineMonth(months, monthIndex - 1, days);
+      $("klineNextMonth").onclick = () => selectKlineMonth(months, monthIndex + 1, days);
+      $("klineDays").innerHTML = monthDays.map(d => `<button data-kday="${d}" class="${d === klineDay ? "on" : ""}"><span>${d.slice(5)}</span><small>${tradeCounts.get(d)} 笔交易</small></button>`).join("");
       document.querySelectorAll("[data-kday]").forEach(b => b.onclick = () => { klineDay = b.dataset.kday; resetKlineViewport(); renderKline(); });
       drawKline();
+    }
+
+    function selectKlineMonth(months, index, days) {
+      if (index < 0 || index >= months.length) return;
+      klineMonth = months[index];
+      const targetDays = days.filter(day => day.startsWith(klineMonth));
+      klineDay = targetDays[targetDays.length - 1] || "";
+      resetKlineViewport();
+      renderKline();
     }
 
     function resetKlineViewport() {
@@ -3407,14 +3550,16 @@
         const parsed = parseAtasCsv(text);
         const dayKeys = Object.keys(parsed).sort();
         if (!dayKeys.length) { $("klineImportNote").textContent = "未解析到 K 线数据，请检查是否为 ATAS 导出格式。"; return; }
-        const imported = loadKlineImported();
-        Object.assign(imported, parsed);
-        klineStore = Object.assign({}, KLINE_DATA, imported);
-        saveKlineLocalOnly();
+        klineStore = Object.assign({}, KLINE_DATA, klineStore, parsed);
+        await saveKlineLocalOnly(parsed);
         if (currentUser && cloudReady) await saveCloudKlineData();
-        klineDay = dayKeys[dayKeys.length - 1];
+        const tradeDays = new Set(trades.map(t => t.date).filter(Boolean));
+        const matchedDays = dayKeys.filter(day => tradeDays.has(day));
+        klineDay = matchedDays[matchedDays.length - 1] || "";
+        klineMonth = klineDay ? klineDay.slice(0, 7) : "";
         resetKlineViewport();
-        $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天：${dayKeys.join("、")}`;
+        const range = dayKeys.length === 1 ? dayKeys[0] : `${dayKeys[0]} 至 ${dayKeys[dayKeys.length - 1]}`;
+        $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天 K 线（${range}），其中 ${matchedDays.length} 个日期有交易并可显示。`;
         renderKline();
       } catch (err) {
         $("klineImportNote").textContent = "导入失败：" + err.message;

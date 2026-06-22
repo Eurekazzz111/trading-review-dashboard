@@ -1,12 +1,9 @@
-feat: add trade management risk fields and manual keyword sync
+feat: organize K-line review by traded days
 
-- 保留策略手册关键词手动输入方案：左侧策略列表、右侧关键词复习和核心分析同步显示，同一关键词固定同一颜色
-- Add targetPrice, exitReason, managementTag, managementReview and targetReached fields
-- Calculate realizedR from actual P&L divided by initial risk dollars
-- Add dashboard/core analysis metrics for realized R, payoff ratio and missed target profit
-- Let trade strategy use existing strategy names through a datalist while still allowing custom input
-- Sync edited trade form values into trade table and K-line review panels immediately
-- Update K-line trade number markers so losing trades are red
-- Update README and CSV example for the new import/export fields
-
-Note: after deployment, existing cloud rows continue to work because new fields live inside the JSON data payload.
+- Only show chart dates that have both trade records and imported K-line data
+- Hide the chart, order path and trade detail panel when no matching trade day exists
+- Add year/month navigation with a compact monthly trade-day grid
+- Keep imported non-trade dates stored but hidden until a trade is recorded for that date
+- Migrate local K-line persistence from localStorage to IndexedDB for longer 1m history
+- Keep the existing Supabase kline_days schema and cloud sync format compatible
+- Update README with the new display and storage behavior
