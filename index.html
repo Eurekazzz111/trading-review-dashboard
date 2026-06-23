@@ -1580,7 +1580,10 @@
 
     function normalizeSymbolValue(value) {
       const text = String(value || "").trim().toUpperCase();
-      if (text.includes("MNQ") || text.includes("NQ")) return "NQ";
+      if (text.includes("MNQ")) return "MNQ";
+      if (text.includes("MES")) return "MES";
+      if (text.includes("NQ")) return "NQ";
+      if (text.includes("ES")) return "ES";
       return text;
     }
 
