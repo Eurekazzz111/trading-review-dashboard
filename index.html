@@ -2193,7 +2193,7 @@
         ["盈亏比", s.payoff === Infinity ? "∞" : num(s.payoff), "Avg Win ÷ Avg Loss", s.payoff >= 1.5 ? "positive" : s.payoff < 1 ? "negative" : "neutral", "ring", clamp01(s.payoff / 3) * 100],
         ["Realized R", num(s.avgRealizedR, 2), `总R ${num(s.totalRealizedR, 2)}`, pnlClass(s.avgRealizedR), "bar", clamp01((Number(s.avgRealizedR || 0) + 1) / 2) * 100],
         ["目标错失", money(s.missedProfit), `${s.targetReachedCount} 笔后续到目标`, s.missedProfit > 0 ? "negative" : "neutral", "bar", clamp01(s.missedProfit / Math.max(1, s.grossWin)) * 100],
-        ["Max Drawdown", money(s.maxDrawdown), `平均持仓 ${num(s.avgHold,0)}m`, s.maxDrawdown < 0 ? "negative" : "neutral", "ring", scoreDrawdown(s)]
+        ["Worst Trade", money(s.worstTrade), "最大单笔亏损", s.worstTrade < 0 ? "negative" : "neutral", "ring", clamp01(1 - Math.abs(Math.min(0, Number(s.worstTrade || 0))) / Math.max(1, s.grossLossAbs)) * 100]
       ];
       $("kpis").innerHTML = items.map(([label, value, sub, cls, visual, pctValue]) => `
         <div class="metric">
