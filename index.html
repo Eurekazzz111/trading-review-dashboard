@@ -1030,8 +1030,8 @@
           <p id="pageSub">交易表现、策略质量和执行偏差</p>
         </div>
         <div class="actions">
-          <label class="file-btn">
-            <span>⇧ 导入CSV</span>
+          <label class="file-btn" title="按交易 ID 合并：保留已有记录，只追加新 ID">
+            <span>⇧ 合并CSV</span>
             <input id="csvInput" type="file" accept=".csv,text/csv">
           </label>
           <button id="addTrade" class="primary">＋ 新增交易</button>
@@ -3637,6 +3637,24 @@
       }).filter(t => t.date && t.symbol);
     }
 
+    function mergeImportedTrades(existingTrades, importedTrades) {
+      const merged = [...existingTrades];
+      const knownIds = new Set(existingTrades.map(t => String(t.id || "").trim()).filter(Boolean));
+      let added = 0;
+      let skipped = 0;
+      importedTrades.forEach(t => {
+        const id = String(t.id || "").trim();
+        if (!id || knownIds.has(id)) {
+          skipped++;
+          return;
+        }
+        knownIds.add(id);
+        merged.push(t);
+        added++;
+      });
+      return {trades: merged, added, skipped, retained: existingTrades.length};
+    }
+
     async function readCsvFileText(file) {
       const bytes = await file.arrayBuffer();
       try {
@@ -3824,10 +3842,11 @@
       const text = await readCsvFileText(file);
       const rows = parseCsv(text);
       if (rows.length) {
-        trades = rows;
-        if (currentUser && cloudReady) await clearCloudTrades();
+        const result = mergeImportedTrades(trades, rows);
+        trades = result.trades;
         saveAll();
         render();
+        setAuthStatus(`CSV 合并完成：保留 ${result.retained} 笔，新增 ${result.added} 笔，跳过重复 ID ${result.skipped} 笔。`);
       }
       e.target.value = "";
     });

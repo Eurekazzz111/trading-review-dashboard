@@ -21,7 +21,7 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 
 ## 当前功能
 
-- 交易日志录入和 CSV 导入/导出
+- 交易日志录入和 CSV 合并导入/导出：保留已有交易，只追加新的交易 ID
 - 自动计算点数、美元盈亏、持仓时间、Risk/Reward
 - 风险管理记录：初始止损、目标价、出场原因、管理标签、保护评价、后续是否到目标
 - 自动计算 Realized R、平均 Realized R、总 Realized R、盈亏比和目标错失利润
@@ -68,6 +68,8 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 - 总览新增截图所列的完整绩效指标，并补充 Recovery Factor、日度 Sharpe、日均交易频率和连续胜负。
 
 ## CSV 格式
+
+导入采用增量合并：已有交易 ID 保持不变，CSV 中的新 ID 会追加，重复 ID 会跳过，不再清空或覆盖历史记录。建议每笔交易使用稳定且唯一的 `id`。
 
 推荐字段：
 
