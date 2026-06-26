@@ -703,6 +703,17 @@
       flex-wrap: wrap;
     }
 
+    .autosave-status {
+      min-width: 90px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .autosave-status[data-state="saving"] { color: var(--gold); }
+    .autosave-status[data-state="saved"] { color: var(--green); }
+    .autosave-status[data-state="error"] { color: var(--red); }
+
     .small-note {
       font-size: 12px;
       color: var(--muted);
@@ -1169,6 +1180,7 @@
               <button id="calcTrade">自动计算</button>
               <button id="saveTrade" class="primary">保存</button>
               <button id="clearTradeForm">清空</button>
+              <span id="tradeAutosaveStatus" class="autosave-status"></span>
             </div>
           </div>
           <div class="form-grid" id="tradeForm">
@@ -1556,6 +1568,8 @@
     let calendarCursor = new Date();
     let selectedDay = "";
     let manualDayPartTouched = false;
+    let tradeAutosaveTimer = null;
+    let tradeAutosavePaused = false;
 
     const $ = (id) => document.getElementById(id);
 
@@ -1864,8 +1878,14 @@
       return Number.isFinite(n) ? n : null;
     }
 
+    function sumAvailable(values) {
+      const nums = values.map(toNum).filter(v => v !== null);
+      return nums.length ? nums.reduce((sum, v) => sum + v, 0) : "";
+    }
+
     function money(n) {
-      const v = Number(n || 0);
+      const v = toNum(n);
+      if (v === null) return "-";
       const s = v < 0 ? "-" : "";
       return s + "$" + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
     }
@@ -1935,38 +1955,40 @@
       const exit = toNum(t.exit);
       const initialStop = toNum(t.initialStop ?? t.stop);
       const targetPrice = toNum(t.targetPrice ?? t.target);
-      const qty = toNum(t.qty) ?? 0;
+      const qty = toNum(t.qty);
       const existingPoints = toNum(t.points);
-      t.points = entry !== null && exit !== null ? (existingPoints ?? (exit - entry) * dir) : (existingPoints ?? 0);
+      t.points = entry !== null && exit !== null ? (existingPoints ?? (exit - entry) * dir) : (existingPoints ?? "");
       t.initialStop = initialStop ?? "";
       t.targetPrice = targetPrice ?? "";
       const riskPoints = entry !== null && initialStop !== null ? Math.abs(entry - initialStop) : 0;
       t.initialRiskPoints = riskPoints || "";
-      t.initialRiskDollar = riskPoints && t.pointValue && qty ? riskPoints * t.pointValue * qty : "";
+      t.initialRiskDollar = riskPoints && t.pointValue && qty !== null ? riskPoints * t.pointValue * qty : "";
       const existingRiskReward = toNum(t.riskReward ?? t.rMultiple ?? t.r);
       t.riskReward = riskPoints > 0 && toNum(t.points) !== null ? t.points / riskPoints : (existingRiskReward ?? "");
-      const fees = Math.max(0, toNum(t.fees ?? t.commission ?? t.commissions) ?? 0);
+      const parsedFees = toNum(t.fees ?? t.commission ?? t.commissions);
+      const fees = parsedFees !== null ? Math.max(0, parsedFees) : null;
       const existingPnl = toNum(t.pnl);
       const existingNetPnl = toNum(t.netPnl ?? t.net_pnl);
       if (existingPnl !== null) {
         t.pnl = existingPnl;
       } else if (existingNetPnl !== null) {
-        t.pnl = existingNetPnl + fees;
-      } else if (toNum(t.points) !== null && t.pointValue && qty) {
+        t.pnl = existingNetPnl + (fees ?? 0);
+      } else if (toNum(t.points) !== null && t.pointValue && qty !== null) {
         t.pnl = t.points * t.pointValue * qty;
       } else {
-        t.pnl = 0;
+        t.pnl = "";
       }
-      t.fees = fees;
-      t.netPnl = Number(t.pnl || 0) - fees;
+      t.fees = fees ?? "";
+      t.netPnl = toNum(t.pnl) !== null ? Number(t.pnl) - (fees ?? 0) : (existingNetPnl ?? "");
       const existingRealizedR = toNum(t.realizedR);
-      t.realizedR = t.initialRiskDollar ? Number(t.netPnl || 0) / Number(t.initialRiskDollar) : (existingRealizedR ?? "");
+      const netPnlForR = toNum(t.netPnl);
+      t.realizedR = t.initialRiskDollar && netPnlForR !== null ? netPnlForR / Number(t.initialRiskDollar) : (existingRealizedR ?? "");
       t.targetReached = parseBool(t.targetReached);
       const missedPoints = t.targetReached && targetPrice !== null && exit !== null
         ? Math.max(0, (targetPrice - exit) * dir)
         : 0;
-      t.missedProfit = missedPoints && t.pointValue && qty ? missedPoints * t.pointValue * qty : 0;
-      t.holdingMinutes = toNum(t.holdingMinutes) ?? minutesBetween(t.date, t.entryTime, t.exitTime);
+      t.missedProfit = missedPoints && t.pointValue && qty !== null ? missedPoints * t.pointValue * qty : 0;
+      t.holdingMinutes = toNum(t.holdingMinutes) ?? (minutesBetween(t.date, t.entryTime, t.exitTime) || "");
       t.dayPart = normalizeDayPart(t.dayPart, t.entryTime, t.session);
       t.entryLocation = normalizeEntryLocation(t.entryLocation);
       t.ruleBroken = raw.ruleBroken === true || raw.ruleBroken === "true" || raw.ruleBroken === 1 || raw.ruleBroken === "1";
@@ -2004,16 +2026,22 @@
 
     function calcStats(list) {
       list = list.map(derivedTrade);
-      const wins = list.filter(t => Number(t.netPnl) > 0);
-      const losses = list.filter(t => Number(t.netPnl) < 0);
-      const grossProfit = list.filter(t => Number(t.pnl) > 0).reduce((s,t) => s + Number(t.pnl), 0);
-      const grossLoss = Math.abs(list.filter(t => Number(t.pnl) < 0).reduce((s,t) => s + Number(t.pnl), 0));
-      const totalPnl = list.reduce((s,t) => s + Number(t.pnl || 0), 0);
-      const totalFees = list.reduce((s,t) => s + Number(t.fees || 0), 0);
-      const netPnl = list.reduce((s,t) => s + Number(t.netPnl || 0), 0);
+      const pnlRows = list.filter(t => toNum(t.netPnl) !== null);
+      const grossRows = list.filter(t => toNum(t.pnl) !== null);
+      const feeRows = list.filter(t => toNum(t.fees) !== null);
+      const pointRows = list.filter(t => toNum(t.points) !== null);
+      const holdRows = list.filter(t => toNum(t.holdingMinutes) !== null);
+      const gradeRows = list.filter(t => toNum(t.grade) !== null);
+      const wins = pnlRows.filter(t => Number(t.netPnl) > 0);
+      const losses = pnlRows.filter(t => Number(t.netPnl) < 0);
+      const grossProfit = grossRows.filter(t => Number(t.pnl) > 0).reduce((s,t) => s + Number(t.pnl), 0);
+      const grossLoss = Math.abs(grossRows.filter(t => Number(t.pnl) < 0).reduce((s,t) => s + Number(t.pnl), 0));
+      const totalPnl = grossRows.length ? grossRows.reduce((s,t) => s + Number(t.pnl), 0) : "";
+      const totalFees = feeRows.length ? feeRows.reduce((s,t) => s + Number(t.fees), 0) : "";
+      const netPnl = pnlRows.length ? pnlRows.reduce((s,t) => s + Number(t.netPnl), 0) : "";
       const totalProfit = wins.reduce((s,t) => s + Number(t.netPnl), 0);
       const totalLossAbs = Math.abs(losses.reduce((s,t) => s + Number(t.netPnl), 0));
-      const totalPoints = list.reduce((s,t) => s + Number(t.points || 0), 0);
+      const totalPoints = pointRows.length ? pointRows.reduce((s,t) => s + Number(t.points), 0) : "";
       const avgWin = wins.length ? totalProfit / wins.length : 0;
       const avgLoss = losses.length ? totalLossAbs / losses.length : 0;
       const riskRewards = list.map(t => toNum(t.riskReward)).filter(v => v !== null);
@@ -2021,7 +2049,8 @@
       const missedProfit = list.reduce((s,t) => s + Number(t.missedProfit || 0), 0);
       const targetReachedCount = list.filter(t => t.targetReached).length;
       const dailyMap = list.reduce((acc, t) => {
-        if (t.date) acc[t.date] = (acc[t.date] || 0) + Number(t.netPnl || 0);
+        const net = toNum(t.netPnl);
+        if (t.date && net !== null) acc[t.date] = (acc[t.date] || 0) + net;
         return acc;
       }, {});
       const dailyValues = Object.values(dailyMap);
@@ -2032,8 +2061,8 @@
       const dailyVariance = totalDays > 1 ? dailyValues.reduce((s,v) => s + Math.pow(v - dailyMean, 2), 0) / (totalDays - 1) : null;
       const dailyStd = dailyVariance === null ? null : Math.sqrt(dailyVariance);
       const sharpeRatio = dailyStd === null ? null : dailyStd > 0 ? dailyMean / dailyStd * Math.sqrt(252) : dailyMean > 0 ? Infinity : dailyMean < 0 ? -Infinity : 0;
-      const drawdown = calcDrawdownStats(list, Number(settings.startingBalance || 0));
-      const sortedByNet = list.slice().sort((a,b) => Number(a.netPnl) - Number(b.netPnl));
+      const drawdown = calcDrawdownStats(pnlRows, Number(settings.startingBalance || 0));
+      const sortedByNet = pnlRows.slice().sort((a,b) => Number(a.netPnl) - Number(b.netPnl));
       return {
         trades: list.length,
         total: netPnl,
@@ -2043,10 +2072,10 @@
         totalPoints,
         wins: wins.length,
         losses: losses.length,
-        winRate: list.length ? wins.length / list.length : 0,
-        profitFactor: totalLossAbs ? totalProfit / totalLossAbs : totalProfit > 0 ? Infinity : 0,
-        expectancy: list.length ? netPnl / list.length : 0,
-        expectancyPoints: list.length ? totalPoints / list.length : 0,
+        winRate: pnlRows.length ? wins.length / pnlRows.length : "",
+        profitFactor: pnlRows.length ? (totalLossAbs ? totalProfit / totalLossAbs : totalProfit > 0 ? Infinity : 0) : "",
+        expectancy: pnlRows.length ? netPnl / pnlRows.length : "",
+        expectancyPoints: pointRows.length ? totalPoints / pointRows.length : "",
         avgWin,
         avgLoss,
         payoff: avgLoss ? avgWin / avgLoss : avgWin ? Infinity : 0,
@@ -2061,9 +2090,9 @@
         totalRealizedR: realizedRs.length ? realizedRs.reduce((s,t) => s + t, 0) : "",
         missedProfit,
         targetReachedCount,
-        avgPoints: list.length ? totalPoints / list.length : 0,
-        avgHold: list.length ? list.reduce((s,t) => s + Number(t.holdingMinutes || 0), 0) / list.length : 0,
-        avgGrade: list.length ? list.reduce((s,t) => s + Number(t.grade || 0), 0) / list.length : 0,
+        avgPoints: pointRows.length ? totalPoints / pointRows.length : "",
+        avgHold: holdRows.length ? holdRows.reduce((s,t) => s + Number(t.holdingMinutes), 0) / holdRows.length : "",
+        avgGrade: gradeRows.length ? gradeRows.reduce((s,t) => s + Number(t.grade), 0) / gradeRows.length : "",
         totalDays,
         profitDays,
         lossDays,
@@ -2073,7 +2102,7 @@
         bestTrade: sortedByNet.length ? Number(sortedByNet[sortedByNet.length - 1].netPnl) : 0,
         worstTrade: sortedByNet.length ? Number(sortedByNet[0].netPnl) : 0,
         sharpeRatio,
-        recoveryFactor: drawdown.maxDrawdown < 0 ? netPnl / Math.abs(drawdown.maxDrawdown) : netPnl > 0 ? Infinity : 0,
+        recoveryFactor: drawdown.maxDrawdown < 0 && toNum(netPnl) !== null ? netPnl / Math.abs(drawdown.maxDrawdown) : netPnl > 0 ? Infinity : 0,
         maxDrawdown: drawdown.maxDrawdown,
         maxDrawdownDate: drawdown.maxDrawdownDate,
         maxRelativeDrawdown: drawdown.maxRelativeDrawdown
@@ -2081,11 +2110,11 @@
     }
 
     function calcDrawdownStats(list, startingBalance = 0) {
-      const rows = list.map(derivedTrade).sort((a,b) => tradeSortKey(a).localeCompare(tradeSortKey(b)));
+      const rows = list.map(derivedTrade).filter(t => toNum(t.netPnl) !== null).sort((a,b) => tradeSortKey(a).localeCompare(tradeSortKey(b)));
       let equity = startingBalance > 0 ? startingBalance : 0;
       let peak = equity, maxDrawdown = 0, maxDrawdownDate = "", maxRelativeDrawdown = null;
       rows.forEach(t => {
-        equity += Number(t.netPnl || 0);
+        equity += Number(t.netPnl);
         peak = Math.max(peak, equity);
         const drawdown = equity - peak;
         if (drawdown < maxDrawdown) {
@@ -2106,8 +2135,8 @@
 
     function calcStreaks(list) {
       let win = 0, loss = 0, maxWin = 0, maxLoss = 0, currentType = "", currentCount = 0;
-      list.map(derivedTrade).sort((a,b) => tradeSortKey(a).localeCompare(tradeSortKey(b))).forEach(t => {
-        const pnl = Number(t.netPnl || 0);
+      list.map(derivedTrade).filter(t => toNum(t.netPnl) !== null).sort((a,b) => tradeSortKey(a).localeCompare(tradeSortKey(b))).forEach(t => {
+        const pnl = Number(t.netPnl);
         const type = pnl > 0 ? "win" : pnl < 0 ? "loss" : "flat";
         if (type === "win") { win += 1; loss = 0; maxWin = Math.max(maxWin, win); }
         else if (type === "loss") { loss += 1; win = 0; maxLoss = Math.max(maxLoss, loss); }
@@ -2396,8 +2425,8 @@
     }
 
     function renderHoldStats(list) {
-      const wins = list.filter(t => Number(t.netPnl) > 0);
-      const losses = list.filter(t => Number(t.netPnl) < 0);
+      const wins = list.filter(t => toNum(t.netPnl) !== null && Number(t.netPnl) > 0);
+      const losses = list.filter(t => toNum(t.netPnl) !== null && Number(t.netPnl) < 0);
       const winStats = calcStats(wins);
       const lossStats = calcStats(losses);
       const streak = calcStreaks(list);
@@ -2467,7 +2496,7 @@
       }
       const broken = rows.filter(t => derivedTrade(t).ruleBroken);
       const emotions = unique(rows.map(t => t.emotionCause)).filter(Boolean);
-      const worst = rows.slice().sort((a,b) => Number(a.netPnl) - Number(b.netPnl))[0];
+      const worst = rows.filter(t => toNum(t.netPnl) !== null).sort((a,b) => Number(a.netPnl) - Number(b.netPnl))[0];
       const points = [
         `当日 ${rows.length} 笔，净盈亏 ${money(s.total)}，点数 ${num(s.totalPoints, 1)} pts，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}。`,
         broken.length ? `有 ${broken.length} 笔破规则，主要标签：${unique(broken.map(t => t.ruleViolation)).filter(Boolean).join(" / ") || "未标注"}。` : "当天没有标记破规则交易。",
@@ -2544,7 +2573,7 @@
       `).join("");
       drawScoreChart(score.values);
       $("analysisRiskMetrics").innerHTML = [
-        ["总 RR", num(list.reduce((a,t) => a + Number(t.riskReward || 0), 0), 2)],
+        ["总 RR", num(sumAvailable(list.map(t => t.riskReward)), 2)],
         ["RR 期望/笔", num(s.avgR, 2)],
         ["Realized R/笔", num(s.avgRealizedR, 2)],
         ["总 Realized R", num(s.totalRealizedR, 2)],
@@ -2633,10 +2662,11 @@
       const c = $("equityChart"), ctx = c.getContext("2d");
       clearCanvas(c, ctx);
       let equity = 0, peak = 0;
-      const pts = list.map((t, i) => {
-        equity += Number(t.netPnl || 0);
+      const rows = list.filter(t => toNum(t.netPnl) !== null);
+      const pts = rows.map((t, i) => {
+        equity += Number(t.netPnl);
         peak = Math.max(peak, equity);
-        return {x:i, y:equity, pnl:Number(t.netPnl || 0), dd:equity - peak, label:t.date};
+        return {x:i, y:equity, pnl:Number(t.netPnl), dd:equity - peak, label:t.date};
       });
       $("equityMeta").textContent = pts.length ? `${pts[0].label} → ${pts.at(-1).label}` : "";
       const pad = 42;
@@ -2705,7 +2735,7 @@
       const c = $("equityChart"), ctx = c.getContext("2d");
       clearCanvas(c, ctx);
       let sum = 0;
-      const pts = list.map((t, i) => ({x:i, y:(sum += Number(t.netPnl || 0)), label:t.date}));
+      const pts = list.filter(t => toNum(t.netPnl) !== null).map((t, i) => ({x:i, y:(sum += Number(t.netPnl)), label:t.date}));
       $("equityMeta").textContent = pts.length ? `${pts[0].label} → ${pts.at(-1).label}` : "";
       drawAxes(ctx, c, "总盈亏");
       if (!pts.length) return;
@@ -2732,6 +2762,7 @@
 
     function drawDailyBars(rows) {
       const c = $("dailyBarChart"), ctx = c.getContext("2d");
+      rows = rows.filter(r => toNum(r.stats.total) !== null);
       const values = rows.map(r => r.stats.total);
       const pad = 42;
       const paint = (hoverIndex = -1) => {
@@ -2993,7 +3024,8 @@
           const ei = idxForTime(t.entryTime);
           if (ei < start || ei >= end) return;
           const ex = mapX(ei - start), ey = mapY(entry);
-          const win = Number(t.netPnl) >= 0, lc = win ? "#148a5b" : "#bd3b3b";
+          const net = toNum(t.netPnl);
+          const lc = net === null ? "#6d746f" : net >= 0 ? "#148a5b" : "#bd3b3b";
           const exit = Number(t.exit);
           if (isFinite(exit) && exit) {
             const xi = idxForTime(t.exitTime);
@@ -3416,7 +3448,7 @@
       const badSession = bySession.sort((a,b) => a.stats.total - b.stats.total)[0];
       const byPart = aggregateBy(list, t => t.dayPart);
       const weakPart = byPart.sort((a,b) => a.stats.total - b.stats.total)[0];
-      const lowGradeLosses = list.filter(t => Number(t.netPnl) < 0 && Number(t.grade || 0) <= 2);
+      const lowGradeLosses = list.filter(t => toNum(t.netPnl) !== null && Number(t.netPnl) < 0 && toNum(t.grade) !== null && Number(t.grade) <= 2);
       const cards = [
         ["账户状态", `当前筛选内总盈亏 ${money(s.total)}，净点数 ${num(s.totalPoints,1)} pts，Profit Factor ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，数学期望 ${money(s.expectancy)}。${s.profitFactor < 1 ? "先降低频率并限制低分交易。" : "整体可交易，但仍需按策略拆分风险。"} `],
         ["策略偏差", weak ? `${weak.key} 是当前弱项，${weak.stats.trades} 笔，PF ${weak.stats.profitFactor === Infinity ? "∞" : num(weak.stats.profitFactor)}，净盈亏 ${money(weak.stats.total)}。` : "样本不足，暂不判定弱策略。"],
@@ -3442,6 +3474,7 @@
     }
 
     function fillTradeForm(t = {}) {
+      tradeAutosavePaused = true;
       t = t.id ? derivedTrade(t) : t;
       manualDayPartTouched = Boolean(t.dayPart);
       ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","netPnl","riskReward","realizedR","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
@@ -3453,6 +3486,9 @@
       if (!$("session").value) $("session").value = "美盘";
       if (!$("dayPart").value) $("dayPart").value = "早盘";
       if (!$("side").value) $("side").value = "Long";
+      clearTimeout(tradeAutosaveTimer);
+      setTradeAutosaveStatus(t.id ? "已加载" : "");
+      tradeAutosavePaused = false;
     }
 
     function editTrade(id) {
@@ -3483,12 +3519,13 @@
         const riskDollar = risk && qty && pointValue ? risk * pointValue * qty : 0;
         $("realizedR").value = riskDollar && pnlForR !== null ? num(pnlForR / riskDollar, 2) : "";
       }
-      const grossPnl = toNum($("pnl").value) ?? 0;
-      const fees = Math.max(0, toNum($("fees").value) ?? 0);
-      $("netPnl").value = num(grossPnl - fees, 2);
+      const grossPnl = toNum($("pnl").value);
+      const parsedFees = toNum($("fees").value);
+      const fees = Math.max(0, parsedFees ?? 0);
+      $("netPnl").value = grossPnl !== null ? num(grossPnl - fees, 2) : "";
       const risk = entry !== null && initialStop !== null ? Math.abs(entry - initialStop) : 0;
       const riskDollar = risk && qty && pointValue ? risk * pointValue * qty : 0;
-      if (riskDollar) $("realizedR").value = num((grossPnl - fees) / riskDollar, 2);
+      if (riskDollar && grossPnl !== null) $("realizedR").value = num((grossPnl - fees) / riskDollar, 2);
       const hold = minutesBetween($("date").value, $("entryTime").value, $("exitTime").value);
       if (hold) $("holdingMinutes").value = hold;
       if (!manualDayPartTouched) $("dayPart").value = inferDayPart($("entryTime").value, $("session").value);
@@ -3510,16 +3547,17 @@
         initialStop: toNum($("initialStop").value) ?? "",
         targetPrice: toNum($("targetPrice").value) ?? "",
         exit: toNum($("exit").value) ?? "",
-        qty: toNum($("qty").value) ?? 0,
+        qty: toNum($("qty").value) ?? "",
         pointValue: pointValueForSymbol($("symbol").value),
         points: toNum($("points").value) ?? "",
-        pnl: toNum($("pnl").value) ?? 0,
-        fees: Math.max(0, toNum($("fees").value) ?? 0),
+        pnl: toNum($("pnl").value) ?? "",
+        fees: toNum($("fees").value) !== null ? Math.max(0, toNum($("fees").value)) : "",
+        netPnl: toNum($("netPnl").value) ?? "",
         riskReward: toNum($("riskReward").value) ?? "",
         realizedR: toNum($("realizedR").value) ?? "",
         targetReached: $("targetReached").value === "true",
-        holdingMinutes: toNum($("holdingMinutes").value) ?? 0,
-        grade: toNum($("grade").value) ?? 0,
+        holdingMinutes: toNum($("holdingMinutes").value) ?? "",
+        grade: toNum($("grade").value) ?? "",
         exitReason: $("exitReason").value,
         managementTag: $("managementTag").value,
         managementReview: $("managementReview").value,
@@ -3532,25 +3570,64 @@
       };
     }
 
-    function syncOpenTradeDraft() {
-      const id = $("tradeId").value;
-      if (!id) return;
+    function tradeDraftHasContent(t) {
+      const meaningfulFields = [
+        "date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice",
+        "exit","qty","points","pnl","fees","netPnl","riskReward","realizedR","holdingMinutes","grade",
+        "exitReason","managementTag","managementReview","ruleViolation","emotionCause","entrySignal","entryReason","notes"
+      ];
+      return meaningfulFields.some(key => hasValue(t[key])) || t.targetReached === true || t.ruleBroken === true;
+    }
+
+    function setTradeAutosaveStatus(message, state = "") {
+      const el = $("tradeAutosaveStatus");
+      if (!el) return;
+      el.textContent = message || "";
+      if (state) el.dataset.state = state;
+      else delete el.dataset.state;
+    }
+
+    function scheduleTradeAutosave() {
+      if (tradeAutosavePaused) return;
+      const saved = syncOpenTradeDraft({createIfNeeded:true});
+      if (!saved) return;
+      setTradeAutosaveStatus("自动保存中...", "saving");
+      clearTimeout(tradeAutosaveTimer);
+      tradeAutosaveTimer = setTimeout(() => {
+        try {
+          saveAll();
+          setTradeAutosaveStatus("已自动保存", "saved");
+        } catch (err) {
+          setTradeAutosaveStatus("自动保存失败", "error");
+        }
+      }, 700);
+    }
+
+    function syncOpenTradeDraft(options = {}) {
       computeTradeFields(false);
-      const i = trades.findIndex(x => x.id === id);
-      if (i < 0) return;
-      trades[i] = readTradeFormDraft();
+      const t = readTradeFormDraft();
+      const existingId = $("tradeId").value;
+      if (!existingId && !tradeDraftHasContent(t)) return false;
+      if (!existingId) {
+        if (!options.createIfNeeded) return false;
+        $("tradeId").value = t.id;
+      }
+      t.id = $("tradeId").value;
+      const i = trades.findIndex(x => x.id === t.id);
+      if (i >= 0) trades[i] = t; else trades.push(t);
       const list = filteredTrades();
       renderKpis(list);
       renderTables(list);
       renderCoreAnalysis(list);
       drawCharts(list);
       renderKline();
+      return true;
     }
 
     function saveTradeForm() {
       computeTradeFields(true);
       const t = readTradeFormDraft();
-      if (!t.date || !t.symbol || !t.strategy) return;
+      if (!tradeDraftHasContent(t)) return;
       const i = trades.findIndex(x => x.id === t.id);
       if (i >= 0) trades[i] = t; else trades.push(t);
       saveAll();
@@ -3797,11 +3874,11 @@
       e.target.value = "";
     });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
-    $("calcTrade").addEventListener("click", () => { computeTradeFields(true); syncOpenTradeDraft(); });
+    $("calcTrade").addEventListener("click", () => { computeTradeFields(true); scheduleTradeAutosave(); });
     const tradeSyncFields = ["date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
-    tradeSyncFields.forEach(id => $(id).addEventListener("input", () => syncOpenTradeDraft()));
-    tradeSyncFields.forEach(id => $(id).addEventListener("change", () => syncOpenTradeDraft()));
-    $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; syncOpenTradeDraft(); });
+    tradeSyncFields.forEach(id => $(id).addEventListener("input", () => scheduleTradeAutosave()));
+    tradeSyncFields.forEach(id => $(id).addEventListener("change", () => scheduleTradeAutosave()));
+    $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; scheduleTradeAutosave(); });
     $("openSettings").addEventListener("click", openSettingsModal);
     $("closeSettings").addEventListener("click", closeSettingsModal);
     $("saveSettings").addEventListener("click", saveSettingsForm);
