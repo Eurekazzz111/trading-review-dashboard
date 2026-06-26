@@ -640,6 +640,62 @@
       line-height: 1.55;
     }
 
+    .model-shot-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 9px;
+    }
+
+    .model-shot-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .model-shot {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+    }
+
+    .model-shot button {
+      width: 100%;
+      height: auto;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: #111;
+      display: block;
+    }
+
+    .model-shot img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+    }
+
+    .model-shot-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .model-shot-meta button {
+      width: auto;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel);
+      padding: 0 8px;
+    }
+
     .analysis-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1353,6 +1409,19 @@
                 <div class="keyword-cloud" id="strategyKeywordCloud"></div>
               </div>
               <div class="strategy-note" id="strategyCoreNote"></div>
+              <div>
+                <div class="model-shot-toolbar">
+                  <div>
+                    <h3 style="margin:0 0 3px;">模型截图</h3>
+                    <div class="small-note">保存相似形态、进出场模型或复盘示例</div>
+                  </div>
+                  <label class="file-btn">
+                    <span>＋ 截图</span>
+                    <input id="manualImageInput" type="file" accept="image/*" multiple>
+                  </label>
+                </div>
+                <div class="model-shot-grid" id="manualImageGrid"></div>
+              </div>
             </div>
           </section>
         </div>
@@ -3321,6 +3390,31 @@
       return parseKeywordInput(m.keywords).slice(0, 18);
     }
 
+    function manualImages(m = {}) {
+      return Array.isArray(m.modelImages) ? m.modelImages : [];
+    }
+
+    function selectedManual() {
+      return selectedManualId ? manuals.find(x => x.id === selectedManualId) : null;
+    }
+
+    function renderManualImages(m = {}) {
+      const images = manualImages(m);
+      $("manualImageGrid").innerHTML = images.length ? images.map((image, index) => `
+        <div class="model-shot">
+          <button type="button" data-open-manual-image="${index}" title="查看大图">
+            <img src="${escapeHtml(image.src)}" alt="${escapeHtml(image.name || "策略模型截图")}">
+          </button>
+          <div class="model-shot-meta">
+            <span>${escapeHtml(image.name || `模型截图 ${index + 1}`)}</span>
+            <button type="button" data-delete-manual-image="${index}">删除</button>
+          </div>
+        </div>
+      `).join("") : `<div class="empty">还没有模型截图。上传截图后会保存在当前策略里。</div>`;
+      document.querySelectorAll("[data-delete-manual-image]").forEach(btn => btn.addEventListener("click", () => deleteManualImage(Number(btn.dataset.deleteManualImage))));
+      document.querySelectorAll("[data-open-manual-image]").forEach(btn => btn.addEventListener("click", () => openManualImage(Number(btn.dataset.openManualImage))));
+    }
+
     function renderStrategyAnalysis(m = {}) {
       const rows = trades.map(derivedTrade).filter(t => t.strategy === m.name);
       const s = calcStats(rows);
@@ -3331,6 +3425,7 @@
       $("strategyCoreNote").textContent = keys.length
         ? `复习重点：${keys.slice(0, 8).join(" / ")}`
         : "这里会同步显示你手动填写的关键词，不再自动提炼长文内容。";
+      renderManualImages(m);
     }
 
     function manualKeywordLineHtml(m = {}) {
@@ -3674,7 +3769,83 @@
       render();
     }
 
+    function readImageAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("图片读取失败"));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function compressManualImage(file) {
+      const source = await readImageAsDataUrl(file);
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("图片加载失败"));
+        image.src = source;
+      });
+      const maxWidth = 1400;
+      const scale = Math.min(1, maxWidth / img.width);
+      const width = Math.max(1, Math.round(img.width * scale));
+      const height = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      const type = file.type === "image/png" && file.size < 600000 ? "image/png" : "image/jpeg";
+      const src = canvas.toDataURL(type, .82);
+      return {
+        id: "IMG" + Date.now() + Math.random().toString(16).slice(2),
+        name: file.name || "模型截图",
+        src,
+        createdAt: new Date().toISOString()
+      };
+    }
+
+    async function addManualImages(files) {
+      let manual = selectedManual();
+      if (!manual && $("manualName").value.trim()) {
+        saveManualForm();
+        manual = selectedManual();
+      }
+      if (!manual || !files?.length) return;
+      const additions = [];
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+        additions.push(await compressManualImage(file));
+      }
+      if (!additions.length) return;
+      manual.modelImages = manualImages(manual).concat(additions).slice(-12);
+      saveAll();
+      renderStrategyAnalysis(manual);
+      updateSelectedManualPreview(manual);
+    }
+
+    function deleteManualImage(index) {
+      const manual = selectedManual();
+      if (!manual) return;
+      manual.modelImages = manualImages(manual).filter((_, i) => i !== index);
+      saveAll();
+      renderStrategyAnalysis(manual);
+      updateSelectedManualPreview(manual);
+    }
+
+    function openManualImage(index) {
+      const manual = selectedManual();
+      const image = manualImages(manual || {})[index];
+      if (!image?.src) return;
+      const win = window.open("", "_blank", "noopener,noreferrer");
+      if (win) {
+        win.document.write(`<title>${escapeHtml(image.name || "模型截图")}</title><body style="margin:0;background:#111;display:grid;place-items:center;min-height:100vh;"><img src="${image.src}" style="max-width:100%;max-height:100vh;object-fit:contain;"></body>`);
+        win.document.close();
+      }
+    }
+
     function saveManualForm() {
+      const existing = $("manualId").value ? manuals.find(x => x.id === $("manualId").value) : null;
       const m = {
         id: $("manualId").value || "M" + Date.now(),
         name: $("manualName").value.trim(),
@@ -3684,7 +3855,8 @@
         keywords: $("manualKeywords").value.trim(),
         entry: $("manualEntry").value.trim(),
         exit: $("manualExit").value.trim(),
-        invalid: $("manualInvalid").value.trim()
+        invalid: $("manualInvalid").value.trim(),
+        modelImages: manualImages(existing)
       };
       if (!m.name) return;
       const i = manuals.findIndex(x => x.id === m.id);
@@ -3933,6 +4105,7 @@
     $("clearTradeForm").addEventListener("click", () => fillTradeForm());
     $("saveStrategy").addEventListener("click", saveManualForm);
     ["manualReflection","manualKeywords","manualEntry","manualExit","manualInvalid","manualName","manualMarket"].forEach(id => $(id).addEventListener("input", () => {
+      const existing = selectedManual();
       const draft = {
         name: $("manualName").value,
         market: $("manualMarket").value,
@@ -3940,11 +4113,16 @@
         keywords: $("manualKeywords").value,
         entry: $("manualEntry").value,
         exit: $("manualExit").value,
-        invalid: $("manualInvalid").value
+        invalid: $("manualInvalid").value,
+        modelImages: manualImages(existing)
       };
       renderStrategyAnalysis(draft);
       updateSelectedManualPreview(draft);
     }));
+    $("manualImageInput").addEventListener("change", async e => {
+      await addManualImages([...e.target.files]);
+      e.target.value = "";
+    });
     $("newLearning").addEventListener("click", () => { selectedLearningId = "__new__"; renderLearningNotes(); fillLearningForm({}); });
     $("saveLearning").addEventListener("click", saveLearningForm);
     $("deleteLearning").addEventListener("click", deleteLearningForm);
