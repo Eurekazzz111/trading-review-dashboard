@@ -1,6 +1,6 @@
-id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,fees,netPnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
-T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,8,1992,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
-T2002,2026-06-18,10:42,11:06,美盘,午盘,MNQ,Short,Failed Break,前高,22040,22062,22000,22070,-1.36,-1.36,false,-180,12,-192,3,2,初始止损,被止损,未按计划,true,追单,FOMO,突破失败回区间,突破失败后追空太晚,
-T2003,2026-06-19,08:20,09:02,欧盘,早盘,ES,Long,VWAP Rejection,VWAP,6020,6014,6032,6032,2.00,2.00,true,600,4,596,1,4,到目标,按计划持有,无需评价,false,,,VWAP 上方回踩后收回,结构确认后执行,
-T2004,2026-06-19,13:18,13:55,美盘,午盘,NQ,Short,Range Edge,VAL,22120,22152,22082,22082,1.19,1.19,true,760,8,752,1,3,到目标,推保护锁盈,合理保护,false,,,价值区上沿反应,动能衰减后出场,
-T2005,2026-06-20,09:31,09:44,美盘,早盘,NQ,Long,Opening Drive,LVP,22210,22182,22258,22178,-1.14,-1.14,false,-1280,10,-1290,2,1,初始止损,被止损,未按计划,true,抢跑,过度自信,开盘直接冲动进场,没有等 5m 确认，开盘直接抢跑,
+id,recordType,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,fees,netPnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
+T2001,live,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,8,1992,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
+T2002,live,2026-06-18,10:42,11:06,美盘,午盘,MNQ,Short,Failed Break,前高,22040,22062,22000,22070,-1.36,-1.36,false,-180,12,-192,3,2,初始止损,被止损,未按计划,true,追单,FOMO,突破失败回区间,突破失败后追空太晚,
+T2003,live,2026-06-19,08:20,09:02,欧盘,早盘,ES,Long,VWAP Rejection,VWAP,6020,6014,6032,6032,2.00,2.00,true,600,4,596,1,4,到目标,按计划持有,无需评价,false,,,VWAP 上方回踩后收回,结构确认后执行,
+T2004,live,2026-06-19,13:18,13:55,美盘,午盘,NQ,Short,Range Edge,VAL,22120,22152,22082,22082,1.19,1.19,true,760,8,752,1,3,到目标,推保护锁盈,合理保护,false,,,价值区上沿反应,动能衰减后出场,
+T2005,live,2026-06-20,09:31,09:44,美盘,早盘,NQ,Long,Opening Drive,LVP,22210,22182,22258,22178,-1.14,-1.14,false,-1280,10,-1290,2,1,初始止损,被止损,未按计划,true,抢跑,过度自信,开盘直接冲动进场,没有等 5m 确认，开盘直接抢跑,

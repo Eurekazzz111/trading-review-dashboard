@@ -45,6 +45,7 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 
 ## 最近更新
 
+- 新增 `recordType` 记录类型：默认统计只看实盘，复盘回放、模拟盘、假设修正和观察案例需要切换筛选后查看，避免干扰实盘账本。
 - 交易日志支持自动保存和不完整记录保存；缺失字段不阻止记录进入总笔数，只会跳过对应指标的计算。
 - 策略手册关键词改为手动输入，不再从策略长文自动提炼；保存后会随策略手册一起同步。
 - 同一个关键词在策略列表、关键词复习和核心分析中使用固定颜色，方便区分和复盘。
@@ -75,18 +76,19 @@ https://Eurekazzz111.github.io/trading-review-dashboard/
 推荐字段：
 
 ```csv
-id,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,fees,netPnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
+id,recordType,date,entryTime,exitTime,session,dayPart,symbol,side,strategy,entryLocation,entry,initialStop,targetPrice,exit,riskReward,realizedR,targetReached,pnl,fees,netPnl,qty,grade,exitReason,managementTag,managementReview,ruleBroken,ruleViolation,emotionCause,entrySignal,entryReason,notes
 ```
 
 示例：
 
 ```csv
-T2001,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,8,1992,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
+T2001,live,2026-06-18,09:35,10:05,美盘,早盘,NQ,Long,Opening Drive,VAH,22000,21980,22050,22050,2.50,2.50,true,2000,8,1992,2,5,到目标,按计划持有,无需评价,false,,,5m 收回开盘高点,前一日 VAH 上方回踩不破,按计划执行
 ```
 
 字段说明：
 
 - `date`：交易日期，格式 `YYYY-MM-DD`
+- `recordType`：记录类型，默认 `live`；可用值为 `live` 实盘、`replay` 复盘回放、`sim` 模拟盘、`hypothetical` 假设修正、`observation` 观察案例
 - `entryTime` / `exitTime`：入场和出场时间
 - `session`：美盘、欧盘、亚盘
 - `dayPart`：早盘、午盘、尾盘
@@ -137,6 +139,8 @@ K 线数据保存方式：
 注意：K 线时间戳的时区必须和交易记录里的进出场时间一致（建议都用美东），否则标记会落在错误的 K 线上。
 
 ## 缺失数据处理
+
+默认筛选为 `实盘`，所以复盘回放、模拟盘、假设修正和观察案例会保存在同一套系统里，但不会默认进入实盘盈亏、胜率、资金曲线和回撤。需要混合查看时，在左侧 `记录类型` 筛选中选择 `全部类型` 或指定类型。
 
 交易记录不需要字段完整才能保存。只填日期、品种、想法、备注或部分价格时，也会作为一条记录保留下来，并计入交易总笔数。
 统计时按字段可用性分别计算：没有 `netPnl` 的记录不会进入胜率、Profit Factor、数学期望、资金曲线和回撤；没有 `points` 的记录不会进入点数统计；没有 `holdingMinutes` 或 `grade` 的记录不会进入对应平均值。

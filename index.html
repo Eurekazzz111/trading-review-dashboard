@@ -1015,6 +1015,10 @@
           <input id="toDate" type="date">
         </div>
         <div>
+          <label for="recordTypeFilter">记录类型</label>
+          <select id="recordTypeFilter"></select>
+        </div>
+        <div>
           <label for="symbolFilter">品种</label>
           <select id="symbolFilter"></select>
         </div>
@@ -1185,6 +1189,7 @@
           </div>
           <div class="form-grid" id="tradeForm">
             <input type="hidden" id="tradeId">
+            <div class="field"><label>记录类型</label><select id="recordType"><option value="live">实盘</option><option value="replay">复盘回放</option><option value="sim">模拟盘</option><option value="hypothetical">假设修正</option><option value="observation">观察案例</option></select></div>
             <div class="field"><label>日期</label><input id="date" type="date"></div>
             <div class="field"><label>入场时间</label><input id="entryTime" type="time"></div>
             <div class="field"><label>出场时间</label><input id="exitTime" type="time"></div>
@@ -1537,6 +1542,21 @@
     }
 
     const sampleTrades = [];
+    const RECORD_TYPES = [
+      ["live", "实盘"],
+      ["replay", "复盘回放"],
+      ["sim", "模拟盘"],
+      ["hypothetical", "假设修正"],
+      ["observation", "观察案例"]
+    ];
+    const RECORD_TYPE_LABELS = Object.fromEntries(RECORD_TYPES);
+    const RECORD_TYPE_ALIASES = {
+      live: "live", "实盘": "live", "real": "live", "actual": "live",
+      replay: "replay", "复盘": "replay", "复盘回放": "replay", "回放交易": "replay",
+      sim: "sim", "模拟": "sim", "模拟盘": "sim", paper: "sim",
+      hypothetical: "hypothetical", "假设": "hypothetical", "假设修正": "hypothetical", "修正": "hypothetical",
+      observation: "observation", "观察": "observation", "观察案例": "observation", case: "observation"
+    };
 
     const sampleManual = [
       {id:"M1",name:"Opening Drive",market:"NQ / ES",status:"Active",reflection:"开盘后先判断大周期关键位和前一日结构，不能只看第一分钟冲动。高质量机会通常来自首个方向扩张后的回踩不破，并且订单流没有明显反向吸收。",keywords:"开盘, 大周期, 回踩, 订单流, 延续",entry:"首个方向扩张后回踩不破，入场只做延续。",exit:"第一目标减仓，剩余按结构移动止损。",invalid:"开盘区间被反向收回，或第二根 5m 无延续。"},
@@ -1606,8 +1626,18 @@
         .replace(/\b(vwap|poc|vah|val|lvp|lvn|hvn|hgn|lgn)\b/gi, token => token.toUpperCase());
     }
 
+    function normalizeRecordType(value) {
+      const key = String(value || "").trim();
+      return RECORD_TYPE_ALIASES[key] || RECORD_TYPE_ALIASES[key.toLowerCase()] || "live";
+    }
+
+    function recordTypeLabel(value) {
+      return RECORD_TYPE_LABELS[normalizeRecordType(value)] || RECORD_TYPE_LABELS.live;
+    }
+
     function normalizeTradeRecord(raw = {}) {
       const t = {...raw};
+      t.recordType = normalizeRecordType(t.recordType || t.record_type || t.type || t["记录类型"]);
       t.date = normalizeDateValue(t.date || t.Date);
       t.entryTime = String(t.entryTime || t.entry_time || "").slice(0, 5);
       t.exitTime = String(t.exitTime || t.exit_time || "").slice(0, 5);
@@ -1949,6 +1979,7 @@
 
     function derivedTrade(raw) {
       const t = {...raw};
+      t.recordType = normalizeRecordType(t.recordType);
       t.pointValue = toNum(t.pointValue) ?? pointValueForSymbol(t.symbol);
       const dir = t.side === "Short" ? -1 : 1;
       const entry = toNum(t.entry);
@@ -2009,6 +2040,7 @@
     function filteredTrades() {
       const from = $("fromDate").value;
       const to = $("toDate").value;
+      const recordType = $("recordTypeFilter").value;
       const sym = $("symbolFilter").value;
       const ses = $("sessionFilter").value;
       const part = $("dayPartFilter").value;
@@ -2016,6 +2048,7 @@
       return trades.map(derivedTrade).filter(t => {
         if (from && t.date < from) return false;
         if (to && t.date > to) return false;
+        if (recordType && normalizeRecordType(t.recordType) !== recordType) return false;
         if (sym && t.symbol !== sym) return false;
         if (ses && t.session !== ses) return false;
         if (part && t.dayPart !== part) return false;
@@ -2184,6 +2217,9 @@
         dayPartFilter: unique(["早盘","午盘","晚盘", ...trades.map(t => derivedTrade(t).dayPart)]),
         strategyFilter: unique(trades.map(t => t.strategy))
       };
+      const typeCurrent = $("recordTypeFilter").value || "live";
+      $("recordTypeFilter").innerHTML = '<option value="">全部类型</option>' + RECORD_TYPES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+      $("recordTypeFilter").value = ["", ...RECORD_TYPES.map(([value]) => value)].includes(typeCurrent) ? typeCurrent : "live";
       Object.entries(lists).forEach(([id, values]) => {
         const current = $(id).value;
         $(id).innerHTML = '<option value="">全部</option>' + values.map(v => `<option>${escapeHtml(v)}</option>`).join("");
@@ -2346,13 +2382,14 @@
     function renderTradeTable(list) {
       $("tradeCount").textContent = list.length + " 笔";
       const head = `<thead><tr>
-        <th>日期</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th><th>开单位置</th>
+        <th>日期</th><th>类型</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th><th>开单位置</th>
         <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">目标</th><th class="num">出场</th><th class="num">点数</th><th class="num">Total PnL</th><th class="num">手续费</th><th class="num">Net PnL</th><th class="num">Risk/Reward</th><th class="num">Realized R</th><th class="num">错失</th><th class="num">持仓</th><th>管理</th><th>纪律</th><th>违规/情绪</th><th></th>
       </tr></thead>`;
       const body = list.length ? list.map(raw => {
         const t = derivedTrade(raw);
         return `<tr>
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
+        <td><span class="pill ${normalizeRecordType(t.recordType) === "live" ? "green" : "blue"}">${recordTypeLabel(t.recordType)}</span></td>
         <td><span class="pill violet">${escapeHtml(t.session)}</span></td>
         <td><span class="pill blue">${escapeHtml(t.dayPart)}</span></td>
         <td>${escapeHtml(t.symbol)}</td>
@@ -3462,7 +3499,7 @@
 
     function renderRoadmap() {
       const items = [
-        ["导入模板锁定", "固定 CSV 字段：id, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entryLocation, entry, initialStop, targetPrice, exit, riskReward, realizedR, targetReached, pnl, fees, netPnl, qty, grade, exitReason, managementTag, managementReview, ruleBroken, ruleViolation, emotionCause, notes。点数、美元、净盈亏、Risk/Reward、Realized R 和持仓时间自动计算；如果 pnl 已经包含手续费，fees 留空即可。"],
+        ["导入模板锁定", "固定 CSV 字段：id, recordType, date, entryTime, exitTime, session, dayPart, symbol, side, strategy, entryLocation, entry, initialStop, targetPrice, exit, riskReward, realizedR, targetReached, pnl, fees, netPnl, qty, grade, exitReason, managementTag, managementReview, ruleBroken, ruleViolation, emotionCause, notes。recordType 默认 live 实盘，可用 replay / sim / hypothetical / observation；点数、美元、净盈亏、Risk/Reward、Realized R 和持仓时间自动计算；如果 pnl 已经包含手续费，fees 留空即可。"],
         ["截图归档", "每笔交易追加入场图、出场图、复盘图，后续可按策略自动筛选错误截图。"],
         ["MAE/MFE", "记录最大浮亏点数和最大浮盈点数，判断止损是否太紧、止盈是否太早。"],
         ["手续费与滑点", "按品种配置手续费、滑点和每点美元，区分毛盈亏和净盈亏。"],
@@ -3477,10 +3514,11 @@
       tradeAutosavePaused = true;
       t = t.id ? derivedTrade(t) : t;
       manualDayPartTouched = Boolean(t.dayPart);
-      ["tradeId","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","netPnl","riskReward","realizedR","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
+      ["tradeId","recordType","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","netPnl","riskReward","realizedR","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"].forEach(id => {
         const key = id === "tradeId" ? "id" : id;
         if ($(id)) $(id).value = t[key] ?? "";
       });
+      $("recordType").value = normalizeRecordType(t.recordType);
       if (!$("targetReached").value) $("targetReached").value = "false";
       if (!$("date").value) $("date").valueAsDate = new Date();
       if (!$("session").value) $("session").value = "美盘";
@@ -3534,6 +3572,7 @@
     function readTradeFormDraft() {
       return {
         id: $("tradeId").value || "T" + Date.now(),
+        recordType: normalizeRecordType($("recordType").value),
         date: $("date").value,
         entryTime: $("entryTime").value,
         exitTime: $("exitTime").value,
@@ -3677,6 +3716,7 @@
         headers.forEach((h, i) => o[h] = r[i] ?? "");
         return normalizeTradeRecord({
           id: o.id || "I" + Date.now() + idx,
+          recordType: o.recordType || o.record_type || o.type || o["记录类型"] || "",
           date: o.date || o.Date || o["日期"] || "",
           entryTime: o.entryTime || o.entry_time || o["入场时间"] || "",
           exitTime: o.exitTime || o.exit_time || o["出场时间"] || "",
@@ -3755,7 +3795,7 @@
     }
 
     function exportCsv() {
-      const headers = ["id","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","riskReward","realizedR","targetReached","pnl","fees","netPnl","qty","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
+      const headers = ["id","recordType","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","riskReward","realizedR","targetReached","pnl","fees","netPnl","qty","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
       const lines = [headers.join(",")].concat(trades.map(t => derivedTrade(t)).map(t => headers.map(h => csvCell(t[h])).join(",")));
       const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
       const url = URL.createObjectURL(blob);
@@ -3846,8 +3886,8 @@
     }
 
     document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
-    ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
-    $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); render(); });
+    ["fromDate","toDate","recordTypeFilter","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).addEventListener("change", render));
+    $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); $("recordTypeFilter").value = "live"; render(); });
     $("resetSample").addEventListener("click", async () => { trades = []; saveLocalOnly(); await clearCloudTrades(); render(); });
     $("klineResetZoom").addEventListener("click", () => { resetKlineViewport(); renderKline(); });
     $("klineImport").addEventListener("change", async e => {
@@ -3875,7 +3915,7 @@
     });
     $("addTrade").addEventListener("click", () => { showView("trades"); fillTradeForm(); });
     $("calcTrade").addEventListener("click", () => { computeTradeFields(true); scheduleTradeAutosave(); });
-    const tradeSyncFields = ["date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
+    const tradeSyncFields = ["recordType","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
     tradeSyncFields.forEach(id => $(id).addEventListener("input", () => scheduleTradeAutosave()));
     tradeSyncFields.forEach(id => $(id).addEventListener("change", () => scheduleTradeAutosave()));
     $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; scheduleTradeAutosave(); });
