@@ -1602,7 +1602,15 @@
     const CURRENT_DATA_VERSION = "empty-start-v1";
     const SUPABASE_URL = "https://zbdwntfogxucjtysbqri.supabase.co";
     const SUPABASE_KEY = "sb_publishable_LuLPHS23WkV72EeNj0ErlQ_RsU6gq54";
-    const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "implicit",
+        storageKey: "trading-review-auth"
+      }
+    });
     localStorage.removeItem(LEGACY_IMAGE_STORAGE_KEY);
 
     if (localStorage.getItem(DATA_VERSION_KEY) !== CURRENT_DATA_VERSION) {
@@ -1819,12 +1827,43 @@
       if (el) el.textContent = message;
     }
 
+    function clearAuthParamsFromUrl() {
+      const clean = location.origin + location.pathname + (location.search.includes("code=") ? "" : location.search);
+      history.replaceState(null, "", clean);
+    }
+
+    async function completeAuthFromUrl() {
+      if (!supabaseClient) return;
+      const hashParams = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      if (accessToken && refreshToken) {
+        setAuthStatus("正在完成邮箱登录...");
+        const {error} = await supabaseClient.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        });
+        if (error) setAuthStatus(`邮箱登录失败：${error.message}`);
+        else clearAuthParamsFromUrl();
+        return;
+      }
+      const url = new URL(location.href);
+      const code = url.searchParams.get("code");
+      if (code) {
+        setAuthStatus("正在完成邮箱登录...");
+        const {error} = await supabaseClient.auth.exchangeCodeForSession(code);
+        if (error) setAuthStatus(`邮箱登录失败：${error.message}`);
+        else clearAuthParamsFromUrl();
+      }
+    }
+
     async function initAuth() {
       await klineStorageReady;
       if (!supabaseClient) {
         setAuthStatus("Supabase SDK 未加载，本机保存");
         return;
       }
+      await completeAuthFromUrl();
       const {data} = await supabaseClient.auth.getSession();
       currentUser = data.session?.user || null;
       updateAuthUi();
