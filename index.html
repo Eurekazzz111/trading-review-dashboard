@@ -1110,8 +1110,12 @@
           <button id="openSettings">⚙ 设置</button>
           <button id="resetSample">清空数据</button>
           <div class="auth-bar">
-            <input id="authEmail" type="email" placeholder="输入邮箱登录云端">
-            <button id="loginEmail" class="primary">邮箱登录</button>
+            <input id="authEmail" type="email" placeholder="邮箱">
+            <input id="authPassword" type="password" placeholder="密码" autocomplete="current-password">
+            <button id="loginEmail" class="primary">密码登录</button>
+            <button id="signupEmail">创建账号</button>
+            <button id="resetPassword">重设密码</button>
+            <button id="updatePassword" class="primary" style="display:none;">保存新密码</button>
             <button id="logoutEmail" style="display:none;">退出</button>
             <span id="authStatus" class="auth-status">未登录，本机保存</span>
           </div>
@@ -1660,6 +1664,7 @@
     let activeView = "dashboard";
     let currentUser = null;
     let cloudReady = false;
+    let passwordRecoveryMode = false;
     let selectedManualId = manuals[0]?.id || "";
     let selectedLearningId = learningNotes[0]?.id || "";
     let calendarCursor = new Date();
@@ -1845,6 +1850,7 @@
       if (tokenHash) {
         setAuthStatus("正在完成邮箱登录...");
         const type = url.searchParams.get("type") || hashParams.get("type") || "magiclink";
+        passwordRecoveryMode = type === "recovery";
         const {error} = await supabaseClient.auth.verifyOtp({
           token_hash: tokenHash,
           type
@@ -1856,6 +1862,7 @@
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
       if (accessToken && refreshToken) {
+        passwordRecoveryMode = (hashParams.get("type") || url.searchParams.get("type")) === "recovery";
         setAuthStatus("正在完成邮箱登录...");
         const {error} = await supabaseClient.auth.setSession({
           access_token: accessToken,
@@ -1867,6 +1874,7 @@
       }
       const code = url.searchParams.get("code");
       if (code) {
+        passwordRecoveryMode = url.searchParams.get("type") === "recovery";
         setAuthStatus("正在完成邮箱登录...");
         const {error} = await supabaseClient.auth.exchangeCodeForSession(code);
         if (error) setAuthStatus(`邮箱登录失败：${error.message}`);
@@ -1895,20 +1903,102 @@
     function updateAuthUi() {
       const loggedIn = Boolean(currentUser);
       $("authEmail").style.display = loggedIn ? "none" : "";
+      $("authPassword").style.display = loggedIn && !passwordRecoveryMode ? "none" : "";
+      $("authPassword").placeholder = passwordRecoveryMode ? "输入新密码" : "密码";
       $("loginEmail").style.display = loggedIn ? "none" : "";
-      $("logoutEmail").style.display = loggedIn ? "" : "none";
-      setAuthStatus(loggedIn ? `已登录：${currentUser.email}` : "未登录，本机保存");
+      $("signupEmail").style.display = loggedIn ? "none" : "";
+      $("resetPassword").style.display = loggedIn ? "none" : "";
+      $("updatePassword").style.display = passwordRecoveryMode ? "" : "none";
+      $("logoutEmail").style.display = loggedIn && !passwordRecoveryMode ? "" : "none";
+      setAuthStatus(passwordRecoveryMode ? "请输入新密码并保存" : loggedIn ? `已登录：${currentUser.email}` : "未登录，本机保存");
+    }
+
+    function authCredentials() {
+      const email = $("authEmail").value.trim();
+      const password = $("authPassword").value;
+      return {email, password};
     }
 
     async function loginWithEmail() {
-      const email = $("authEmail").value.trim();
-      if (!email || !supabaseClient) return;
-      setAuthStatus("正在发送登录邮件...");
-      const {error} = await supabaseClient.auth.signInWithOtp({
+      const {email, password} = authCredentials();
+      if (!email || !password || !supabaseClient) {
+        setAuthStatus("请输入邮箱和密码");
+        return;
+      }
+      setAuthStatus("正在登录...");
+      const {data, error} = await supabaseClient.auth.signInWithPassword({
         email,
+        password
+      });
+      if (error) {
+        setAuthStatus(`密码登录失败：${error.message}`);
+        return;
+      }
+      currentUser = data.user || null;
+      updateAuthUi();
+      if (currentUser) await loadCloudData();
+    }
+
+    async function signupWithEmail() {
+      const {email, password} = authCredentials();
+      if (!email || !password || !supabaseClient) {
+        setAuthStatus("请输入邮箱和密码");
+        return;
+      }
+      if (password.length < 6) {
+        setAuthStatus("密码至少 6 位");
+        return;
+      }
+      setAuthStatus("正在创建账号...");
+      const {data, error} = await supabaseClient.auth.signUp({
+        email,
+        password,
         options: {emailRedirectTo: location.origin + location.pathname}
       });
-      setAuthStatus(error ? `登录邮件发送失败：${error.message}` : "登录邮件已发送，请去邮箱点击链接");
+      if (error) {
+        setAuthStatus(`创建账号失败：${error.message}`);
+        return;
+      }
+      currentUser = data.session?.user || data.user || null;
+      if (data.session) {
+        updateAuthUi();
+        await loadCloudData();
+      } else {
+        setAuthStatus("账号已创建，请按邮箱提示确认后再用密码登录");
+      }
+    }
+
+    async function sendPasswordReset() {
+      const email = $("authEmail").value.trim();
+      if (!email || !supabaseClient) {
+        setAuthStatus("请输入邮箱");
+        return;
+      }
+      setAuthStatus("正在发送重设密码邮件...");
+      const {error} = await supabaseClient.auth.resetPasswordForEmail(email, {
+        redirectTo: location.origin + location.pathname
+      });
+      setAuthStatus(error ? `重设密码邮件发送失败：${error.message}` : "重设密码邮件已发送，请打开邮件链接后设置新密码");
+    }
+
+    async function updatePasswordFromRecovery() {
+      const password = $("authPassword").value;
+      if (!password || password.length < 6) {
+        setAuthStatus("新密码至少 6 位");
+        return;
+      }
+      setAuthStatus("正在保存新密码...");
+      const {error} = await supabaseClient.auth.updateUser({password});
+      if (error) {
+        setAuthStatus(`保存新密码失败：${error.message}`);
+        return;
+      }
+      passwordRecoveryMode = false;
+      $("authPassword").value = "";
+      const {data} = await supabaseClient.auth.getSession();
+      currentUser = data.session?.user || currentUser;
+      updateAuthUi();
+      if (currentUser) await loadCloudData();
     }
 
     async function logout() {
@@ -1916,6 +2006,7 @@
       await supabaseClient.auth.signOut();
       currentUser = null;
       cloudReady = false;
+      passwordRecoveryMode = false;
       trades = loadTrades();
       manuals = loadManuals();
       learningNotes = loadLearningNotes();
@@ -4151,8 +4242,12 @@
     $("closeSettings").addEventListener("click", closeSettingsModal);
     $("saveSettings").addEventListener("click", saveSettingsForm);
     $("loginEmail").addEventListener("click", loginWithEmail);
+    $("signupEmail").addEventListener("click", signupWithEmail);
+    $("resetPassword").addEventListener("click", sendPasswordReset);
+    $("updatePassword").addEventListener("click", updatePasswordFromRecovery);
     $("logoutEmail").addEventListener("click", logout);
     $("authEmail").addEventListener("keydown", e => { if (e.key === "Enter") loginWithEmail(); });
+    $("authPassword").addEventListener("keydown", e => { if (e.key === "Enter") passwordRecoveryMode ? updatePasswordFromRecovery() : loginWithEmail(); });
     $("settingsModal").addEventListener("click", e => { if (e.target.id === "settingsModal") closeSettingsModal(); });
     $("prevMonth").addEventListener("click", () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); renderCalendar(filteredTrades()); });
     $("nextMonth").addEventListener("click", () => { calendarCursor.setMonth(calendarCursor.getMonth() + 1); renderCalendar(filteredTrades()); });
