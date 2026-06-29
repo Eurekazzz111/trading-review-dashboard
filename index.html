@@ -1828,13 +1828,31 @@
     }
 
     function clearAuthParamsFromUrl() {
-      const clean = location.origin + location.pathname + (location.search.includes("code=") ? "" : location.search);
-      history.replaceState(null, "", clean);
+      history.replaceState(null, "", location.origin + location.pathname);
     }
 
     async function completeAuthFromUrl() {
       if (!supabaseClient) return;
+      const url = new URL(location.href);
       const hashParams = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
+      const urlError = url.searchParams.get("error_description") || url.searchParams.get("error") || hashParams.get("error_description") || hashParams.get("error");
+      if (urlError) {
+        setAuthStatus(`邮箱登录失败：${urlError}`);
+        clearAuthParamsFromUrl();
+        return;
+      }
+      const tokenHash = url.searchParams.get("token_hash") || hashParams.get("token_hash");
+      if (tokenHash) {
+        setAuthStatus("正在完成邮箱登录...");
+        const type = url.searchParams.get("type") || hashParams.get("type") || "magiclink";
+        const {error} = await supabaseClient.auth.verifyOtp({
+          token_hash: tokenHash,
+          type
+        });
+        if (error) setAuthStatus(`邮箱登录失败：${error.message}`);
+        else clearAuthParamsFromUrl();
+        return;
+      }
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
       if (accessToken && refreshToken) {
@@ -1847,7 +1865,6 @@
         else clearAuthParamsFromUrl();
         return;
       }
-      const url = new URL(location.href);
       const code = url.searchParams.get("code");
       if (code) {
         setAuthStatus("正在完成邮箱登录...");
