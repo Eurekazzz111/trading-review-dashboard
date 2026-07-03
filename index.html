@@ -59,7 +59,14 @@
       place-items: center;
     }
 
+    button.danger {
+      color: var(--red);
+      border-color: #e1b6b6;
+      background: #fff7f7;
+    }
+
     button:hover { border-color: #b8b0a2; }
+    button.danger:hover { border-color: var(--red); }
     input, select, textarea {
       border: 1px solid var(--line);
       background: white;
@@ -482,6 +489,13 @@
     .table-scroll {
       max-height: 390px;
       overflow: auto;
+    }
+
+    .row-actions {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
     }
 
     .pill {
@@ -2777,11 +2791,17 @@
         <td>${escapeHtml([t.exitReason, t.managementTag, t.managementReview].filter(Boolean).join(" / ") || "-")}</td>
         <td><span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span></td>
         <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
-        <td><button class="icon" data-edit="${t.id}">✎</button></td>
+        <td>
+          <span class="row-actions">
+            <button class="icon" data-edit="${t.id}" title="编辑交易" aria-label="编辑交易">✎</button>
+            <button class="icon danger" data-delete="${t.id}" title="删除交易" aria-label="删除交易">×</button>
+          </span>
+        </td>
       </tr>`;
       }).join("") : `<tr><td colspan="24" class="empty">${tradeTableDate ? "该日期无记录" : "无记录"}</td></tr>`;
       $("tradeTable").innerHTML = head + `<tbody>${body}</tbody>`;
       document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => editTrade(btn.dataset.edit)));
+      document.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", () => deleteTrade(btn.dataset.delete)));
     }
 
     function renderDailyWeekly(list) {
@@ -3944,6 +3964,24 @@
       window.scrollTo({top: 0, behavior: "smooth"});
     }
 
+    async function deleteTrade(id) {
+      const t = trades.find(x => String(x.id) === String(id));
+      if (!t) return;
+      const d = derivedTrade(t);
+      const label = [d.date, d.entryTime && d.exitTime ? `${d.entryTime} → ${d.exitTime}` : "", d.symbol, d.side, money(d.netPnl)]
+        .filter(Boolean).join(" · ");
+      if (!window.confirm(`确定删除这笔交易记录吗？\n${label}`)) return;
+      trades = trades.filter(x => String(x.id) !== String(id));
+      if ($("tradeId").value === String(id)) fillTradeForm();
+      saveLocalOnly();
+      render();
+      setAuthStatus("交易记录已删除，本地已保存");
+      saveAll().then(result => {
+        if (result?.ok === false) setAuthStatus("本地已删除，云端同步失败，请稍后再保存一次");
+        else setAuthStatus("交易记录已删除，云端已同步");
+      }).catch(() => setAuthStatus("本地已删除，云端同步失败，请稍后再保存一次"));
+    }
+
     function focusTradeInDetails(id, date = "") {
       const target = trades.map(derivedTrade).find(t => String(t.id) === String(id));
       if (date || target?.date) tradeTableDate = date || target.date;
@@ -4043,11 +4081,19 @@
 
     function tradeDraftHasContent(t) {
       const meaningfulFields = [
-        "date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice",
+        "entryTime","exitTime","symbol","strategy","entryLocation","entry","initialStop","targetPrice",
         "exit","qty","points","pnl","fees","netPnl","riskReward","realizedR","holdingMinutes","grade",
         "exitReason","managementTag","managementReview","ruleViolation","emotionCause","entrySignal","entryReason","notes"
       ];
       return meaningfulFields.some(key => hasValue(t[key])) || t.targetReached === true || t.ruleBroken === true;
+    }
+
+    function tradeDraftCanAutoCreate(t) {
+      const executionFields = [
+        "entryTime","exitTime","symbol","entry","initialStop","targetPrice","exit","qty","points","pnl","netPnl",
+        "riskReward","realizedR","holdingMinutes","grade"
+      ];
+      return executionFields.some(key => hasValue(t[key])) || t.targetReached === true || t.ruleBroken === true;
     }
 
     function setTradeAutosaveStatus(message, state = "") {
@@ -4081,7 +4127,7 @@
       computeTradeFields(false);
       const t = readTradeFormDraft();
       const existingId = $("tradeId").value;
-      if (!existingId && !tradeDraftHasContent(t)) return false;
+      if (!existingId && !tradeDraftCanAutoCreate(t)) return false;
       if (!existingId) {
         if (!options.createIfNeeded) return false;
         $("tradeId").value = t.id;
