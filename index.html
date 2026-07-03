@@ -1630,6 +1630,8 @@
       ["hypothetical", "假设修正"],
       ["observation", "观察案例"]
     ];
+    const BUILTIN_STRATEGIES = ["双重策略共振"];
+    const EXCLUDED_STRATEGY_NAMES = new Set(["", "-", "开错了"]);
     const RECORD_TYPE_LABELS = Object.fromEntries(RECORD_TYPES);
     const RECORD_TYPE_ALIASES = {
       live: "live", "实盘": "live", "real": "live", "actual": "live",
@@ -1672,6 +1674,9 @@
     let manualDayPartTouched = false;
     let tradeAutosaveTimer = null;
     let tradeAutosavePaused = false;
+    let cloudSaveInFlight = false;
+    let cloudSaveQueued = false;
+    let cloudSavePromise = Promise.resolve();
 
     const $ = (id) => document.getElementById(id);
 
@@ -1717,6 +1722,56 @@
       return RECORD_TYPE_LABELS[normalizeRecordType(value)] || RECORD_TYPE_LABELS.live;
     }
 
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function normalizeStrategyName(value) {
+      return String(value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function isCountableStrategy(value) {
+      return !EXCLUDED_STRATEGY_NAMES.has(normalizeStrategyName(value));
+    }
+
+    function strategyRows(list) {
+      return list.map(derivedTrade).filter(t => isCountableStrategy(t.strategy));
+    }
+
+    function recordUpdatedAt(row) {
+      const time = Date.parse(row?.updatedAt || row?._updatedAt || row?.updated_at || row?.modifiedAt || "");
+      return Number.isFinite(time) ? time : 0;
+    }
+
+    function mergeRecordsByFreshness(localRows = [], cloudRows = [], normalize = x => x) {
+      const merged = new Map();
+      const source = {localWins: 0, localOnly: 0, cloudOnly: 0};
+      cloudRows.forEach(row => {
+        if (!row?.id) return;
+        merged.set(String(row.id), normalize(row));
+      });
+      localRows.forEach(row => {
+        if (!row?.id) return;
+        const id = String(row.id);
+        const current = merged.get(id);
+        if (!current) {
+          source.localOnly += 1;
+          merged.set(id, normalize(row));
+          return;
+        }
+        const localTime = recordUpdatedAt(row);
+        const cloudTime = recordUpdatedAt(current);
+        if (localTime && localTime >= cloudTime) {
+          source.localWins += 1;
+          merged.set(id, normalize(row));
+        }
+      });
+      source.cloudOnly = Math.max(0, cloudRows.length - (localRows.length - source.localOnly));
+      const rows = [...merged.values()];
+      rows.mergeSource = source;
+      return rows;
+    }
+
     function normalizeTradeRecord(raw = {}) {
       const t = {...raw};
       t.recordType = normalizeRecordType(t.recordType || t.record_type || t.type || t["记录类型"]);
@@ -1729,6 +1784,7 @@
       t.entryLocation = normalizeEntryLocation(t.entryLocation || t.entry_location || t.location);
       if (t.side === "买入") t.side = "Long";
       if (t.side === "卖出") t.side = "Short";
+      t.strategy = normalizeStrategyName(t.strategy);
       return t;
     }
 
@@ -1820,11 +1876,8 @@
     }
 
     function saveAll() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
-      localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
-      localStorage.setItem(LEARNING_KEY, JSON.stringify(learningNotes));
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      if (currentUser && cloudReady) saveCloudData();
+      saveLocalOnly();
+      return queueCloudDataSave().catch(error => ({ok:false, error}));
     }
 
     function setAuthStatus(message) {
@@ -2031,19 +2084,32 @@
         setAuthStatus(`云端表未就绪：${firstError.message}`);
         return;
       }
+      const localTrades = trades.slice();
+      const localManuals = manuals.slice();
+      const localLearning = learningNotes.slice();
       const cloudTrades = (tradeRes.data || []).map(row => normalizeTradeRecord({id: row.id, ...(row.data || {})}));
+      const cloudManuals = (manualRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudLearning = (learningRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudKlines = Object.fromEntries((klineRes.data || []).map(row => [row.day, row.candles || []]));
       const cloudKlineDays = Object.keys(cloudKlines);
-      if (cloudTrades.length || !trades.length) trades = cloudTrades;
-      if (manualRes.data?.length) manuals = manualRes.data.map(row => ({id: row.id, ...(row.data || {})}));
-      if (cloudLearning.length || !learningNotes.length) learningNotes = cloudLearning;
+      const mergedTrades = mergeRecordsByFreshness(localTrades, cloudTrades, normalizeTradeRecord);
+      const mergedManuals = mergeRecordsByFreshness(localManuals, cloudManuals);
+      const mergedLearning = mergeRecordsByFreshness(localLearning, cloudLearning);
+      const shouldUploadMerged =
+        mergedTrades.mergeSource.localOnly || mergedTrades.mergeSource.localWins ||
+        mergedManuals.mergeSource.localOnly || mergedManuals.mergeSource.localWins ||
+        mergedLearning.mergeSource.localOnly || mergedLearning.mergeSource.localWins;
+      if (cloudTrades.length || localTrades.length) trades = mergedTrades;
+      if (cloudManuals.length || localManuals.length) manuals = mergedManuals;
+      if (cloudLearning.length || localLearning.length) learningNotes = mergedLearning;
       if (settingsRes.data?.data) settings = {...settings, ...settingsRes.data.data};
       if (cloudKlineDays.length || !Object.keys(klineStore).length) klineStore = Object.assign({}, KLINE_DATA, cloudKlines);
       if (cloudKlineDays.length) await saveKlineLocalOnly(cloudKlines);
       cloudReady = true;
-      if (!cloudTrades.length && trades.length) await saveCloudData();
-      if (!cloudLearning.length && learningNotes.length) await saveCloudData();
+      if (shouldUploadMerged) {
+        try { await saveCloudData(); }
+        catch { /* local merged data is still saved below */ }
+      }
       if (!cloudKlineDays.length && Object.keys(klineStore).length) await saveCloudKlineData();
       saveLocalOnly();
       render();
@@ -2058,7 +2124,7 @@
     }
 
     async function saveCloudData() {
-      if (!currentUser || !supabaseClient || !cloudReady) return;
+      if (!currentUser || !supabaseClient || !cloudReady) return {ok:true, skipped:true};
       const tradeRows = trades.map(t => ({
         id: String(t.id),
         user_id: currentUser.id,
@@ -2085,7 +2151,33 @@
       if (learningRows.length) jobs.push(supabaseClient.from("strategy_learning_notes").upsert(learningRows, {onConflict:"user_id,id"}));
       const results = await Promise.all(jobs);
       const error = results.find(r => r.error)?.error;
-      setAuthStatus(error ? `云端保存失败：${error.message}` : `云端已保存：${currentUser.email}`);
+      if (error) {
+        setAuthStatus(`云端保存失败：${error.message}`);
+        throw error;
+      }
+      setAuthStatus(`云端已保存：${currentUser.email}`);
+      return {ok:true};
+    }
+
+    function queueCloudDataSave() {
+      if (!currentUser || !supabaseClient || !cloudReady) return Promise.resolve({ok:true, skipped:true});
+      cloudSaveQueued = true;
+      if (!cloudSaveInFlight) cloudSavePromise = runCloudSaveQueue();
+      return cloudSavePromise;
+    }
+
+    async function runCloudSaveQueue() {
+      cloudSaveInFlight = true;
+      try {
+        let result = {ok:true, skipped:true};
+        while (cloudSaveQueued) {
+          cloudSaveQueued = false;
+          result = await saveCloudData();
+        }
+        return result;
+      } finally {
+        cloudSaveInFlight = false;
+      }
     }
 
     async function saveCloudKlineData() {
@@ -2411,7 +2503,7 @@
 
     function dayRows(list) {
       return aggregateBy(list, t => t.date).sort((a,b) => a.key.localeCompare(b.key)).map(d => {
-        const best = aggregateBy(d.rows, t => t.strategy)[0]?.key || "-";
+        const best = aggregateBy(strategyRows(d.rows), t => t.strategy)[0]?.key || "-";
         const sessions = unique(d.rows.map(t => t.session)).join(" / ");
         return {...d, best, sessions};
       });
@@ -2431,7 +2523,7 @@
         symbolFilter: unique(trades.map(t => t.symbol)),
         sessionFilter: unique(trades.map(t => t.session)),
         dayPartFilter: unique(["早盘","午盘","晚盘", ...trades.map(t => derivedTrade(t).dayPart)]),
-        strategyFilter: unique(trades.map(t => t.strategy))
+        strategyFilter: unique([...BUILTIN_STRATEGIES, ...trades.map(t => t.strategy).filter(isCountableStrategy)])
       };
       const typeCurrent = $("recordTypeFilter").value || "live";
       $("recordTypeFilter").innerHTML = '<option value="">全部类型</option>' + RECORD_TYPES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
@@ -2447,9 +2539,10 @@
       const el = $("strategyOptions");
       if (!el) return;
       const values = unique([
+        ...BUILTIN_STRATEGIES,
         ...manuals.map(m => m.name),
-        ...trades.map(t => t.strategy),
-        ...learningNotes.map(n => n.strategyName)
+        ...trades.map(t => t.strategy).filter(isCountableStrategy),
+        ...learningNotes.map(n => n.strategyName).filter(isCountableStrategy)
       ]).filter(Boolean);
       el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join("");
     }
@@ -2543,7 +2636,7 @@
     }
 
     function renderTables(list) {
-      renderAggTable("strategyStats", aggregateBy(list, t => t.strategy), "策略");
+      renderAggTable("strategyStats", aggregateBy(strategyRows(list), t => t.strategy), "策略");
       renderAggTable("dayPartStats", aggregateBy(list, t => t.dayPart), "交易段");
       renderEntryLocationStats(list);
       renderPerformanceMetrics(list);
@@ -2724,7 +2817,7 @@
         const key = localDateKey(d);
         const row = dailyMap[key];
         const inMonth = d.getMonth() === month;
-        const cls = !inMonth ? "empty-day" : row ? row.stats.total > 0 ? "win" : row.stats.total < 0 ? "loss" : "flat" : "";
+        const cls = row ? row.stats.total > 0 ? "win" : row.stats.total < 0 ? "loss" : "flat" : !inMonth ? "empty-day" : "";
         const active = selectedDay === key ? "active" : "";
         cells.push(`<button class="day-cell ${cls} ${active}" data-day="${key}" ${inMonth ? "" : "disabled"}>
           <span class="day-num">${d.getDate()}</span>
@@ -2810,7 +2903,7 @@
       const streak = calcStreaks(list);
       const keys = unique([
         ...manuals.flatMap(m => manualKeywords(m)),
-        ...list.map(t => t.strategy),
+        ...strategyRows(list).map(t => t.strategy),
         ...list.map(t => t.ruleViolation),
         ...list.map(t => t.emotionCause)
       ]).slice(0, 18);
@@ -2843,7 +2936,7 @@
       renderAggTable("analysisDirectionStats", aggregateBy(list, t => t.side), "方向");
       renderAnalysisDiscipline(list);
       renderAggTable("analysisHourStats", aggregateBy(list, hourBlock), "时段块");
-      renderAggTable("analysisStrategyStats", aggregateBy(list, t => t.strategy), "策略");
+      renderAggTable("analysisStrategyStats", aggregateBy(strategyRows(list), t => t.strategy), "策略");
     }
 
     function renderAnalysisDiscipline(list) {
@@ -3287,7 +3380,7 @@
             ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(xx, xy); ctx.stroke(); ctx.restore();
             drawArrowMarker(xx, xy, t.side === "Short" ? "up" : "down", lc, 10);
             ctx.fillStyle = lc; ctx.font = "bold 12px Inter, sans-serif";
-            ctx.fillText(`${t.side === "Short" ? "空" : "多"} ${money(t.netPnl)}`, xx + 8, xy + (win ? -8 : 16));
+            ctx.fillText(`${t.side === "Short" ? "空" : "多"} ${money(t.netPnl)}`, xx + 8, xy + (net !== null && net >= 0 ? -8 : 16));
           }
           const ec = t.side === "Short" ? "#bd3b3b" : "#148a5b";
           drawArrowMarker(ex, ey, t.side === "Short" ? "down" : "up", ec, 10);
@@ -3616,9 +3709,10 @@
 
     function learningStrategies() {
       return unique([
+        ...BUILTIN_STRATEGIES,
         ...manuals.map(m => m.name),
-        ...trades.map(t => t.strategy),
-        ...learningNotes.map(n => n.strategyName)
+        ...trades.map(t => t.strategy).filter(isCountableStrategy),
+        ...learningNotes.map(n => n.strategyName).filter(isCountableStrategy)
       ]).filter(Boolean);
     }
 
@@ -3693,7 +3787,8 @@
         thoughts: $("learningThoughts").value.trim(),
         reflection: $("learningReflection").value.trim(),
         knowledge: $("learningKnowledge").value.trim(),
-        cautions: $("learningCautions").value.trim()
+        cautions: $("learningCautions").value.trim(),
+        updatedAt: nowIso()
       };
     }
 
@@ -3720,7 +3815,7 @@
 
     function renderReview(list) {
       const s = calcStats(list);
-      const byStrategy = aggregateBy(list, t => t.strategy);
+      const byStrategy = aggregateBy(strategyRows(list), t => t.strategy);
       const weak = byStrategy.filter(x => x.stats.trades >= 3).sort((a,b) => a.stats.profitFactor - b.stats.profitFactor)[0];
       const best = byStrategy.filter(x => x.stats.trades >= 2).sort((a,b) => b.stats.profitFactor - a.stats.profitFactor)[0];
       const bySession = aggregateBy(list, t => t.session);
@@ -3876,10 +3971,13 @@
       clearTimeout(tradeAutosaveTimer);
       tradeAutosaveTimer = setTimeout(() => {
         try {
-          saveAll();
-          setTradeAutosaveStatus("已自动保存", "saved");
+          saveAll().then(result => {
+            if (result?.ok === false) setTradeAutosaveStatus("本地已保存，云端同步失败", "error");
+            else setTradeAutosaveStatus("已自动保存", "saved");
+          });
         } catch (err) {
-          setTradeAutosaveStatus("自动保存失败", "error");
+          saveLocalOnly();
+          setTradeAutosaveStatus("本地已保存，云端同步失败", "error");
         }
       }, 700);
     }
@@ -3894,8 +3992,10 @@
         $("tradeId").value = t.id;
       }
       t.id = $("tradeId").value;
+      t.updatedAt = nowIso();
       const i = trades.findIndex(x => x.id === t.id);
       if (i >= 0) trades[i] = t; else trades.push(t);
+      saveLocalOnly();
       const list = filteredTrades();
       renderKpis(list);
       renderTables(list);
@@ -3909,6 +4009,7 @@
       computeTradeFields(true);
       const t = readTradeFormDraft();
       if (!tradeDraftHasContent(t)) return;
+      t.updatedAt = nowIso();
       const i = trades.findIndex(x => x.id === t.id);
       if (i >= 0) trades[i] = t; else trades.push(t);
       saveAll();
@@ -3966,6 +4067,7 @@
       }
       if (!additions.length) return;
       manual.modelImages = manualImages(manual).concat(additions).slice(-12);
+      manual.updatedAt = nowIso();
       saveAll();
       renderStrategyAnalysis(manual);
       updateSelectedManualPreview(manual);
@@ -3975,6 +4077,7 @@
       const manual = selectedManual();
       if (!manual) return;
       manual.modelImages = manualImages(manual).filter((_, i) => i !== index);
+      manual.updatedAt = nowIso();
       saveAll();
       renderStrategyAnalysis(manual);
       updateSelectedManualPreview(manual);
@@ -4003,7 +4106,8 @@
         entry: $("manualEntry").value.trim(),
         exit: $("manualExit").value.trim(),
         invalid: $("manualInvalid").value.trim(),
-        modelImages: manualImages(existing)
+        modelImages: manualImages(existing),
+        updatedAt: nowIso()
       };
       if (!m.name) return;
       const i = manuals.findIndex(x => x.id === m.id);
@@ -4297,6 +4401,17 @@
       e.target.value = "";
     });
     window.addEventListener("resize", () => drawCharts(filteredTrades()));
+    window.addEventListener("beforeunload", () => {
+      clearTimeout(tradeAutosaveTimer);
+      if (!tradeAutosavePaused) syncOpenTradeDraft({createIfNeeded:false});
+      saveLocalOnly();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") return;
+      clearTimeout(tradeAutosaveTimer);
+      if (!tradeAutosavePaused) syncOpenTradeDraft({createIfNeeded:false});
+      saveLocalOnly();
+    });
 
     render();
     fillTradeForm();
