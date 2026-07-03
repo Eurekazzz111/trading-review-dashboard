@@ -1654,6 +1654,7 @@
     const MANUAL_KEY = "trading-review-strategies-v1";
     const LEARNING_KEY = "trading-review-learning-v1";
     const SETTINGS_KEY = "trading-review-settings-v1";
+    const DELETED_TRADES_KEY = "trading-review-deleted-trades-v1";
     const LEGACY_IMAGE_STORAGE_KEY = "trading-review-images-v1";
     const DATA_VERSION_KEY = "trading-review-data-version";
     const CURRENT_DATA_VERSION = "empty-start-v1";
@@ -1712,7 +1713,8 @@
     let klineViewport = {key:"", start:0, end:0};
     const klineStorageReady = hydrateKlineStorage();
 
-    let trades = loadTrades();
+    let deletedTradeTombstones = loadDeletedTradeTombstones();
+    let trades = loadTrades().filter(t => !deletedTradeTombstones[String(t.id)]);
     let manuals = loadManuals();
     let learningNotes = loadLearningNotes();
     let settings = loadSettings();
@@ -1846,6 +1848,37 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return structuredClone(sampleTrades);
       try { return JSON.parse(raw).map(normalizeTradeRecord); } catch { return structuredClone(sampleTrades); }
+    }
+
+    function loadDeletedTradeTombstones() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(DELETED_TRADES_KEY) || "{}");
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+        return Object.fromEntries(Object.entries(raw).filter(([id]) => id));
+      } catch {
+        return {};
+      }
+    }
+
+    function saveDeletedTradeTombstones() {
+      localStorage.setItem(DELETED_TRADES_KEY, JSON.stringify(deletedTradeTombstones));
+    }
+
+    function markTradeDeleted(id) {
+      if (!id) return;
+      deletedTradeTombstones[String(id)] = nowIso();
+      saveDeletedTradeTombstones();
+    }
+
+    function clearDeletedTradeTombstones(ids = []) {
+      let changed = false;
+      ids.map(String).forEach(id => {
+        if (id in deletedTradeTombstones) {
+          delete deletedTradeTombstones[id];
+          changed = true;
+        }
+      });
+      if (changed) saveDeletedTradeTombstones();
     }
 
     function loadManuals() {
@@ -2114,7 +2147,8 @@
       currentUser = null;
       cloudReady = false;
       passwordRecoveryMode = false;
-      trades = loadTrades();
+      deletedTradeTombstones = loadDeletedTradeTombstones();
+      trades = loadTrades().filter(t => !deletedTradeTombstones[String(t.id)]);
       manuals = loadManuals();
       learningNotes = loadLearningNotes();
       settings = loadSettings();
@@ -2141,7 +2175,10 @@
       const localTrades = trades.slice();
       const localManuals = manuals.slice();
       const localLearning = learningNotes.slice();
-      const cloudTrades = (tradeRes.data || []).map(row => normalizeTradeRecord({id: row.id, ...(row.data || {})}));
+      const deletedIds = new Set(Object.keys(deletedTradeTombstones));
+      const cloudTrades = (tradeRes.data || [])
+        .filter(row => !deletedIds.has(String(row.id)))
+        .map(row => normalizeTradeRecord({id: row.id, ...(row.data || {})}));
       const cloudManuals = (manualRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudLearning = (learningRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudKlines = Object.fromEntries((klineRes.data || []).map(row => [row.day, row.candles || []]));
@@ -2160,6 +2197,10 @@
       if (cloudKlineDays.length || !Object.keys(klineStore).length) klineStore = Object.assign({}, KLINE_DATA, cloudKlines);
       if (cloudKlineDays.length) await saveKlineLocalOnly(cloudKlines);
       cloudReady = true;
+      if (deletedIds.size) {
+        try { await deleteCloudTradesByIds([...deletedIds]); }
+        catch { /* tombstones stay local and will retry on next save/sync */ }
+      }
       if (shouldUploadMerged) {
         try { await saveCloudData(); }
         catch { /* local merged data is still saved below */ }
@@ -2175,10 +2216,13 @@
       localStorage.setItem(MANUAL_KEY, JSON.stringify(manuals));
       localStorage.setItem(LEARNING_KEY, JSON.stringify(learningNotes));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      saveDeletedTradeTombstones();
     }
 
     async function saveCloudData() {
       if (!currentUser || !supabaseClient || !cloudReady) return {ok:true, skipped:true};
+      const deletedIds = Object.keys(deletedTradeTombstones);
+      if (deletedIds.length) await deleteCloudTradesByIds(deletedIds);
       const tradeRows = trades.map(t => ({
         id: String(t.id),
         user_id: currentUser.id,
@@ -2211,6 +2255,16 @@
       }
       setAuthStatus(`云端已保存：${currentUser.email}`);
       return {ok:true};
+    }
+
+    async function deleteCloudTradesByIds(ids = []) {
+      const uniqueIds = [...new Set(ids.map(String).filter(Boolean))];
+      if (!uniqueIds.length) return {ok:true, skipped:true};
+      if (!currentUser || !supabaseClient || !cloudReady) return {ok:false, skipped:true};
+      const {error} = await supabaseClient.from("trades").delete().eq("user_id", currentUser.id).in("id", uniqueIds);
+      if (error) throw error;
+      clearDeletedTradeTombstones(uniqueIds);
+      return {ok:true, deleted:uniqueIds.length};
     }
 
     function queueCloudDataSave() {
@@ -3971,6 +4025,7 @@
       const label = [d.date, d.entryTime && d.exitTime ? `${d.entryTime} → ${d.exitTime}` : "", d.symbol, d.side, money(d.netPnl)]
         .filter(Boolean).join(" · ");
       if (!window.confirm(`确定删除这笔交易记录吗？\n${label}`)) return;
+      markTradeDeleted(id);
       trades = trades.filter(x => String(x.id) !== String(id));
       if ($("tradeId").value === String(id)) fillTradeForm();
       saveLocalOnly();
