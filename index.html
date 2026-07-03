@@ -759,6 +759,29 @@
       flex-wrap: wrap;
     }
 
+    .table-filter-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .table-filter-row label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .table-filter-row select {
+      height: 34px;
+      min-width: 210px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel);
+      padding: 0 10px;
+    }
+
     .autosave-status {
       min-width: 90px;
       color: var(--muted);
@@ -1287,7 +1310,11 @@
         <section class="panel" style="margin-top:14px;">
           <div class="panel-head">
             <h3>交易明细</h3>
-            <span class="meta" id="tradeCount"></span>
+            <div class="table-filter-row">
+              <label for="tradeDateSelect">日期</label>
+              <select id="tradeDateSelect"></select>
+              <span class="meta" id="tradeCount"></span>
+            </div>
           </div>
           <div class="table-wrap">
             <div class="table-scroll">
@@ -1671,6 +1698,7 @@
     let selectedLearningId = learningNotes[0]?.id || "";
     let calendarCursor = new Date();
     let selectedDay = "";
+    let tradeTableDate = "";
     let manualDayPartTouched = false;
     let tradeAutosaveTimer = null;
     let tradeAutosavePaused = false;
@@ -2689,12 +2717,29 @@
     }
 
     function renderTradeTable(list) {
-      $("tradeCount").textContent = list.length + " 笔";
+      const dayOptions = dayRows(list).sort((a, b) => b.key.localeCompare(a.key));
+      const validDates = new Set(dayOptions.map(d => d.key));
+      if (tradeTableDate && !validDates.has(tradeTableDate)) tradeTableDate = "";
+      const select = $("tradeDateSelect");
+      if (select) {
+        const current = tradeTableDate;
+        select.innerHTML = `<option value="">全部日期 · ${list.length} 笔</option>` + dayOptions.map(d => {
+          const s = d.stats;
+          return `<option value="${escapeHtml(d.key)}">${escapeHtml(d.key)} · ${s.trades}笔 · ${money(s.total)}</option>`;
+        }).join("");
+        select.value = validDates.has(current) ? current : "";
+        select.onchange = () => {
+          tradeTableDate = select.value;
+          renderTradeTable(list);
+        };
+      }
+      const visibleList = tradeTableDate ? list.filter(t => t.date === tradeTableDate) : list;
+      $("tradeCount").textContent = tradeTableDate ? `${visibleList.length} / ${list.length} 笔` : `${list.length} 笔`;
       const head = `<thead><tr>
         <th>日期</th><th>类型</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th><th>开单位置</th>
         <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">目标</th><th class="num">出场</th><th class="num">点数</th><th class="num">Total PnL</th><th class="num">手续费</th><th class="num">Net PnL</th><th class="num">Risk/Reward</th><th class="num">Realized R</th><th class="num">错失</th><th class="num">持仓</th><th>管理</th><th>纪律</th><th>违规/情绪</th><th></th>
       </tr></thead>`;
-      const body = list.length ? list.map(raw => {
+      const body = visibleList.length ? visibleList.map(raw => {
         const t = derivedTrade(raw);
         return `<tr>
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
@@ -2722,7 +2767,7 @@
         <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
         <td><button class="icon" data-edit="${t.id}">✎</button></td>
       </tr>`;
-      }).join("") : `<tr><td colspan="23" class="empty">无记录</td></tr>`;
+      }).join("") : `<tr><td colspan="24" class="empty">${tradeTableDate ? "该日期无记录" : "无记录"}</td></tr>`;
       $("tradeTable").innerHTML = head + `<tbody>${body}</tbody>`;
       document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => editTrade(btn.dataset.edit)));
     }
