@@ -3950,23 +3950,57 @@
       renderLearningNotes();
     }
 
+    function reviewMetricLine(r) {
+      if (!r) return "暂无足够样本。";
+      const s = r.stats;
+      return `${escapeHtml(r.key)}：${s.trades} 笔，净盈亏 ${money(s.total)}，胜率 ${pct(s.winRate)}，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，期望 ${money(s.expectancy)}，均值 ${money(s.avg)}。`;
+    }
+
+    function topAgg(rows, minTrades = 1, sortFn = (a, b) => b.stats.total - a.stats.total) {
+      return rows.filter(r => r.stats.trades >= minTrades).sort(sortFn);
+    }
+
     function renderReview(list) {
-      const s = calcStats(list);
-      const byStrategy = aggregateBy(strategyRows(list), t => t.strategy);
-      const weak = byStrategy.filter(x => x.stats.trades >= 3).sort((a,b) => a.stats.profitFactor - b.stats.profitFactor)[0];
-      const best = byStrategy.filter(x => x.stats.trades >= 2).sort((a,b) => b.stats.profitFactor - a.stats.profitFactor)[0];
-      const bySession = aggregateBy(list, t => t.session);
-      const badSession = bySession.sort((a,b) => a.stats.total - b.stats.total)[0];
-      const byPart = aggregateBy(list, t => t.dayPart);
-      const weakPart = byPart.sort((a,b) => a.stats.total - b.stats.total)[0];
-      const lowGradeLosses = list.filter(t => toNum(t.netPnl) !== null && Number(t.netPnl) < 0 && toNum(t.grade) !== null && Number(t.grade) <= 2);
+      const rows = list.map(derivedTrade);
+      const s = calcStats(rows);
+      const dayAgg = dayRows(rows);
+      const byStrategy = aggregateBy(strategyRows(rows), t => t.strategy);
+      const byLocation = aggregateBy(rows.filter(t => normalizeEntryLocation(t.entryLocation)), t => normalizeEntryLocation(t.entryLocation));
+      const bySession = aggregateBy(rows, t => t.session);
+      const byPart = aggregateBy(rows, t => t.dayPart);
+      const bySide = aggregateBy(rows, t => t.side);
+      const byManagement = aggregateBy(rows.filter(t => t.managementTag || t.managementReview), t => [t.managementTag, t.managementReview].filter(Boolean).join(" / "));
+      const byViolation = aggregateBy(rows.filter(t => t.ruleBroken || t.ruleViolation || t.emotionCause), t => [t.ruleViolation || (t.ruleBroken ? "破规则" : ""), t.emotionCause].filter(Boolean).join(" / ") || "未标注");
+      const bestStrategy = topAgg(byStrategy, 2, (a,b) => b.stats.expectancy - a.stats.expectancy || b.stats.total - a.stats.total)[0];
+      const weakStrategy = topAgg(byStrategy, 2, (a,b) => a.stats.expectancy - b.stats.expectancy || a.stats.total - b.stats.total)[0];
+      const bestLocation = topAgg(byLocation, 2, (a,b) => b.stats.expectancy - a.stats.expectancy || b.stats.total - a.stats.total)[0];
+      const weakLocation = topAgg(byLocation, 2, (a,b) => a.stats.expectancy - b.stats.expectancy || a.stats.total - b.stats.total)[0];
+      const bestSession = topAgg(bySession)[0];
+      const weakPart = topAgg(byPart, 1, (a,b) => a.stats.total - b.stats.total)[0];
+      const worstManagement = topAgg(byManagement, 2, (a,b) => a.stats.total - b.stats.total)[0];
+      const worstViolation = topAgg(byViolation, 1, (a,b) => a.stats.total - b.stats.total)[0];
+      const lowGradeLosses = rows.filter(t => toNum(t.netPnl) !== null && Number(t.netPnl) < 0 && toNum(t.grade) !== null && Number(t.grade) <= 2);
+      const ruleBreaks = rows.filter(t => t.ruleBroken);
+      const missedTargets = rows.filter(t => t.targetReached && toNum(t.missedProfit) !== null && Number(t.missedProfit) > 0);
+      const missingStrategy = rows.filter(t => !isCountableStrategy(t.strategy)).length;
+      const missingLocation = rows.filter(t => !normalizeEntryLocation(t.entryLocation)).length;
+      const lossTrades = rows.filter(t => Number(t.netPnl) < 0).sort((a,b) => Number(a.netPnl) - Number(b.netPnl));
+      const worstTrade = lossTrades[0];
+      const biggestWin = rows.filter(t => Number(t.netPnl) > 0).sort((a,b) => Number(b.netPnl) - Number(a.netPnl))[0];
+      const avgWinLoss = `${money(s.avgWin)} / ${money(s.avgLoss)}`;
+      const positiveDays = dayAgg.filter(d => d.stats.total > 0).length;
+      const negativeDays = dayAgg.filter(d => d.stats.total < 0).length;
+      const sampleQuality = rows.length >= 30 ? "样本已具备初步统计意义，可以按策略/位置拆分决策。" : rows.length >= 10 ? "样本仍偏少，结论先用于风控和行为纠偏，不宜过度放大策略优劣。" : "样本不足，当前报告只能作为交易记录质量检查。";
       const cards = [
-        ["账户状态", `当前筛选内总盈亏 ${money(s.total)}，净点数 ${num(s.totalPoints,1)} pts，Profit Factor ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，数学期望 ${money(s.expectancy)}。${s.profitFactor < 1 ? "先降低频率并限制低分交易。" : "整体可交易，但仍需按策略拆分风险。"} `],
-        ["策略偏差", weak ? `${weak.key} 是当前弱项，${weak.stats.trades} 笔，PF ${weak.stats.profitFactor === Infinity ? "∞" : num(weak.stats.profitFactor)}，净盈亏 ${money(weak.stats.total)}。` : "样本不足，暂不判定弱策略。"],
-        ["优势来源", best ? `${best.key} 贡献最好，胜率 ${pct(best.stats.winRate)}，期望 ${money(best.stats.expectancy)}，平均 ${num(best.stats.avgPoints,2)} pts。优先扩大这个策略的高质量样本。` : "暂无足够优势样本。"],
-        ["时段质量", badSession ? `${badSession.key} 时段表现最低，净盈亏 ${money(badSession.stats.total)}。如果该时段低于整体期望，下一周只保留高质量策略机会。` : "暂无时段数据。"],
-        ["交易段质量", weakPart ? `${weakPart.key} 表现最弱，净盈亏 ${money(weakPart.stats.total)}，平均持仓 ${num(weakPart.stats.avgHold,0)} 分钟。检查是否存在午盘低流动性硬做、早盘抢跑或晚盘追单。` : "暂无交易段数据。"],
-        ["执行纪律", `${lowGradeLosses.length} 笔亏损交易执行评分 ≤2。建议把这些交易归档成错误标签：抢跑、追单、逆势、未等确认。`]
+        ["专业交易员总评", `当前筛选 ${rows.length} 笔，${dayAgg.length} 个交易日；净盈亏 ${money(s.total)}，净点数 ${num(s.totalPoints,1)} pts，胜率 ${pct(s.winRate)}，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}，期望 ${money(s.expectancy)}，平均赢/亏 ${avgWinLoss}。${sampleQuality} 机构视角下，核心不是总盈利，而是优势是否来自可重复策略、可定义位置和可控风险。`],
+        ["账户曲线与风险", `盈利日 ${positiveDays} 天，亏损日 ${negativeDays} 天；最大单笔亏损 ${money(s.worstTrade)}，最大单笔盈利 ${money(s.bestTrade)}。${worstTrade ? `最大风险样本：${escapeHtml(worstTrade.date)} ${escapeHtml(worstTrade.entryTime)} ${escapeHtml(worstTrade.strategy || "未填策略")}，${money(worstTrade.netPnl)}。` : ""}${biggestWin ? ` 最大收益样本：${escapeHtml(biggestWin.date)} ${escapeHtml(biggestWin.entryTime)} ${escapeHtml(biggestWin.strategy || "未填策略")}，${money(biggestWin.netPnl)}。` : ""} 下一阶段应把“最大单笔亏损”作为硬风控线，而不是只看总收益。`],
+        ["策略维度", `优势策略：${reviewMetricLine(bestStrategy)} 弱势策略：${reviewMetricLine(weakStrategy)} ${missingStrategy ? `另有 ${missingStrategy} 笔未填写有效策略，这会污染策略统计。` : "策略字段完整度较好。"} 专业处理方式：只给正期望策略分配风险；弱势策略降级为观察仓或暂停，直到补足截图和规则证据。`],
+        ["开单位置维度", `优势位置：${reviewMetricLine(bestLocation)} 风险位置：${reviewMetricLine(weakLocation)} ${missingLocation ? `有 ${missingLocation} 笔未填写开单位置，建议补齐 VAH/VAL/POC/VWAP/LVN/HVN/结构位/Delta 等标签。` : "位置字段完整度较好。"} 机构交易员不会只问“方向对不对”，而会先问成交是否发生在流动性、失衡、吸收或止损集中区。`],
+        ["时段与方向", `最佳时段：${reviewMetricLine(bestSession)} 薄弱交易段：${reviewMetricLine(weakPart)} 方向拆分：${bySide.map(reviewMetricLine).join(" ")} 如果某个交易段净值低但交易数高，说明存在非选择性开仓，应设置该时段的入场门槛。`],
+        ["执行与纪律", `破规则 ${ruleBreaks.length} 笔；亏损且执行评分≤2 的交易 ${lowGradeLosses.length} 笔。${worstViolation ? `主要错误簇：${reviewMetricLine(worstViolation)}` : "错误标签样本不足。"} ${worstManagement ? `管理问题：${reviewMetricLine(worstManagement)}` : "管理标签样本不足。"} 对职业交易员来说，策略亏损可以接受，执行亏损必须隔离。`],
+        ["目标与持仓管理", `后续到目标但提前离场/错失机会 ${missedTargets.length} 笔，累计目标错失 ${money(s.missedProfit)}。如果错失利润集中在趋势策略，说明保护过早或目标管理过紧；如果亏损集中在突破策略，说明确认条件不足或追单进入流动性尾端。`],
+        ["机构交易员视角", `这组数据应被拆成三类：A 类是有策略、有位置、有触发、有风控的可复制交易；B 类是方向正确但管理问题导致收益折损；C 类是无位置/无策略/情绪驱动的库存噪音。机构交易员会压缩 C 类、限制 B 类风险、只扩大 A 类，并用日内亏损线、连续亏损暂停、单策略亏损上限来保护本金。`],
+        ["下一阶段执行计划", `1）每笔必须填策略 + 开单位置 + 入场信号，否则不计入策略放大样本。2）每周只扩大期望为正且样本≥3的策略。3）最大单笔亏损超过平均盈利时，下一笔风险减半。4）连续两笔低分亏损后停止实盘，只允许复盘记录。5）把“开错了、未等确认、FOMO、害怕亏损、过早保护”单独复盘，不和正常策略混算。`]
       ];
       $("aiReview").innerHTML = cards.map(([h,p]) => `<div class="ai-card"><h4>${h}</h4><p>${p}</p></div>`).join("");
     }
