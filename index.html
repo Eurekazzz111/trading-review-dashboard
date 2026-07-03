@@ -412,6 +412,8 @@
     .kline-legend i { font-style: normal; font-weight: 800; }
     .kline-trades { display: grid; gap: 10px; }
     .kt-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: start; }
+    .kt-card[data-kline-trade] { cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+    .kt-card[data-kline-trade]:hover { border-color: #6b7cff; box-shadow: 0 8px 22px rgba(52, 59, 93, .12); transform: translateY(-1px); }
     .kt-no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; background: var(--ink); }
     .kt-no.long { background: var(--green); } .kt-no.short { background: var(--red); }
     .kt-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }
@@ -462,6 +464,15 @@
 
     tr:hover td { background: #f8f5ef; }
     th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tr.focus-row {
+      animation: focusRowPulse 1.8s ease-out 1;
+      background: #fff8d8 !important;
+      box-shadow: inset 4px 0 0 #d6a21e;
+    }
+    @keyframes focusRowPulse {
+      0% { background: #fff0a8; }
+      100% { background: #fff8d8; }
+    }
 
     .table-wrap {
       overflow: hidden;
@@ -1281,6 +1292,7 @@
             <div class="field"><label>品种</label><input id="symbol" placeholder="NQ / ES / MNQ"></div>
             <div class="field"><label>方向</label><select id="side"><option>Long</option><option>Short</option></select></div>
             <div class="field"><label>策略</label><input id="strategy" list="strategyOptions" placeholder="选择现有策略或输入新策略"><datalist id="strategyOptions"></datalist></div>
+            <div class="field"><label>策略快捷</label><select id="strategyQuick"><option value="">手动输入/常规策略</option><option>双重策略共振</option></select></div>
             <div class="field"><label>开单位置</label><input id="entryLocation" list="entryLocationOptions" placeholder="如：VAH / VAL / POC / VWAP / LVP"><datalist id="entryLocationOptions"></datalist></div>
             <div class="field"><label>入场价</label><input id="entry" type="number" step="0.01"></div>
             <div class="field"><label>Initial Stop</label><input id="initialStop" type="number" step="0.01"></div>
@@ -2741,7 +2753,7 @@
       </tr></thead>`;
       const body = visibleList.length ? visibleList.map(raw => {
         const t = derivedTrade(raw);
-        return `<tr>
+        return `<tr data-trade-row="${escapeHtml(t.id)}">
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
         <td><span class="pill ${normalizeRecordType(t.recordType) === "live" ? "green" : "blue"}">${recordTypeLabel(t.recordType)}</span></td>
         <td><span class="pill violet">${escapeHtml(t.session)}</span></td>
@@ -2864,7 +2876,7 @@
         const inMonth = d.getMonth() === month;
         const cls = row ? row.stats.total > 0 ? "win" : row.stats.total < 0 ? "loss" : "flat" : !inMonth ? "empty-day" : "";
         const active = selectedDay === key ? "active" : "";
-        cells.push(`<button class="day-cell ${cls} ${active}" data-day="${key}" ${inMonth ? "" : "disabled"}>
+        cells.push(`<button class="day-cell ${cls} ${active}" data-day="${key}" ${inMonth || row ? "" : "disabled"}>
           <span class="day-num">${d.getDate()}</span>
           ${row ? `<div class="day-pnl ${pnlClass(row.stats.total)}">${money(row.stats.total)}</div><div class="day-meta">${row.stats.trades} trades</div><span class="day-dot"></span>` : ""}
         </button>`);
@@ -2872,8 +2884,10 @@
       $("calendarGrid").innerHTML = dows + cells.join("");
       document.querySelectorAll("[data-day]").forEach(btn => btn.addEventListener("click", () => {
         selectedDay = btn.dataset.day;
+        tradeTableDate = selectedDay;
         renderCalendar(filteredTrades());
         renderDailyAiReview(filteredTrades());
+        focusTradeDateInDetails(selectedDay);
       }));
     }
 
@@ -3481,7 +3495,7 @@
       const fld = (label, val) => `<div class="kt-field"><b>${label}</b>${val ? escapeHtml(val) : '<span class="empty">—</span>'}</div>`;
       $("klineTradeList").innerHTML = dayTrades.map((t, i) => {
         const long = t.side === "Long";
-        return `<div class="kt-card">
+        return `<div class="kt-card" data-kline-trade="${escapeHtml(t.id)}" title="点击跳到交易明细">
           <div class="kt-no ${long ? "long" : "short"}">${i + 1}</div>
           <div class="kt-body">
             <div class="kt-head">
@@ -3502,6 +3516,10 @@
           </div>
         </div>`;
       }).join("");
+      document.querySelectorAll("[data-kline-trade]").forEach(card => card.addEventListener("click", () => {
+        const t = dayTrades.find(row => String(row.id) === String(card.dataset.klineTrade));
+        focusTradeInDetails(card.dataset.klineTrade, t?.date || klineDay);
+      }));
     }
 
     function round2(n) { return Math.round(n * 100) / 100; }
@@ -3906,9 +3924,16 @@
       if (!$("session").value) $("session").value = "美盘";
       if (!$("dayPart").value) $("dayPart").value = "早盘";
       if (!$("side").value) $("side").value = "Long";
+      syncStrategyQuick();
       clearTimeout(tradeAutosaveTimer);
       setTradeAutosaveStatus(t.id ? "已加载" : "");
       tradeAutosavePaused = false;
+    }
+
+    function syncStrategyQuick() {
+      const el = $("strategyQuick");
+      if (!el) return;
+      el.value = BUILTIN_STRATEGIES.includes($("strategy").value.trim()) ? $("strategy").value.trim() : "";
     }
 
     function editTrade(id) {
@@ -3917,6 +3942,31 @@
       showView("trades");
       fillTradeForm(t);
       window.scrollTo({top: 0, behavior: "smooth"});
+    }
+
+    function focusTradeInDetails(id, date = "") {
+      const target = trades.map(derivedTrade).find(t => String(t.id) === String(id));
+      if (date || target?.date) tradeTableDate = date || target.date;
+      showView("trades");
+      const list = filteredTrades();
+      renderTradeTable(list);
+      setTimeout(() => {
+        const rows = Array.from(document.querySelectorAll("[data-trade-row]"));
+        const row = rows.find(el => String(el.dataset.tradeRow) === String(id));
+        if (!row) return;
+        row.classList.remove("focus-row");
+        void row.offsetWidth;
+        row.classList.add("focus-row");
+        row.scrollIntoView({behavior:"smooth", block:"center", inline:"nearest"});
+      }, 80);
+    }
+
+    function focusTradeDateInDetails(date) {
+      if (!date) return;
+      tradeTableDate = date;
+      showView("trades");
+      renderTradeTable(filteredTrades());
+      setTimeout(() => $("tradeDateSelect")?.scrollIntoView({behavior:"smooth", block:"center"}), 80);
     }
 
     function computeTradeFields(forcePnl = false) {
@@ -4386,6 +4436,11 @@
     const tradeSyncFields = ["recordType","date","entryTime","exitTime","session","dayPart","symbol","side","strategy","entryLocation","entry","initialStop","targetPrice","exit","qty","points","pnl","fees","riskReward","targetReached","holdingMinutes","grade","exitReason","managementTag","managementReview","ruleBroken","ruleViolation","emotionCause","entrySignal","entryReason","notes"];
     tradeSyncFields.forEach(id => $(id).addEventListener("input", () => scheduleTradeAutosave()));
     tradeSyncFields.forEach(id => $(id).addEventListener("change", () => scheduleTradeAutosave()));
+    $("strategy").addEventListener("input", syncStrategyQuick);
+    $("strategyQuick").addEventListener("change", () => {
+      if ($("strategyQuick").value) $("strategy").value = $("strategyQuick").value;
+      scheduleTradeAutosave();
+    });
     $("dayPart").addEventListener("change", () => { manualDayPartTouched = true; scheduleTradeAutosave(); });
     $("openSettings").addEventListener("click", openSettingsModal);
     $("closeSettings").addEventListener("click", closeSettingsModal);
