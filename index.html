@@ -498,6 +498,31 @@
       white-space: nowrap;
     }
 
+    .trade-note-cell {
+      min-width: 420px;
+      max-width: 620px;
+      white-space: normal;
+      line-height: 1.45;
+      color: #2f3733;
+    }
+
+    .trade-note-cell .empty {
+      color: #aaa49a;
+    }
+
+    .trade-note-main {
+      display: block;
+      max-height: 4.4em;
+      overflow: auto;
+    }
+
+    .trade-note-sub {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
     .pill {
       display: inline-flex;
       align-items: center;
@@ -2816,11 +2841,14 @@
       const visibleList = tradeTableDate ? list.filter(t => t.date === tradeTableDate) : list;
       $("tradeCount").textContent = tradeTableDate ? `${visibleList.length} / ${list.length} 笔` : `${list.length} 笔`;
       const head = `<thead><tr>
-        <th>日期</th><th>类型</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th><th>开单位置</th>
+        <th>日期</th><th>类型</th><th>时段</th><th>交易段</th><th>品种</th><th>方向</th><th>策略</th><th>开单位置</th><th>备注 / 复盘重点</th>
         <th class="num">入场</th><th class="num">Initial Stop</th><th class="num">目标</th><th class="num">出场</th><th class="num">点数</th><th class="num">Total PnL</th><th class="num">手续费</th><th class="num">Net PnL</th><th class="num">Risk/Reward</th><th class="num">Realized R</th><th class="num">错失</th><th class="num">持仓</th><th>管理</th><th>纪律</th><th>违规/情绪</th><th></th>
       </tr></thead>`;
       const body = visibleList.length ? visibleList.map(raw => {
         const t = derivedTrade(raw);
+        const noteMain = t.notes || t.entryReason || t.entrySignal || "";
+        const noteSub = [t.notes ? "" : t.entryReason ? "入场理由" : t.entrySignal ? "入场信号" : "", t.notes && t.entryReason ? `入场理由：${t.entryReason}` : "", t.notes && t.entrySignal ? `入场信号：${t.entrySignal}` : ""]
+          .filter(Boolean).join(" ｜ ");
         return `<tr data-trade-row="${escapeHtml(t.id)}">
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
         <td><span class="pill ${normalizeRecordType(t.recordType) === "live" ? "green" : "blue"}">${recordTypeLabel(t.recordType)}</span></td>
@@ -2830,6 +2858,7 @@
         <td><span class="pill ${t.side === "Long" ? "green" : "red"}">${escapeHtml(t.side)}</span></td>
         <td>${escapeHtml(t.strategy)}</td>
         <td>${escapeHtml(t.entryLocation || "-")}</td>
+        <td class="trade-note-cell">${noteMain ? `<span class="trade-note-main">${escapeHtml(noteMain)}</span>${noteSub ? `<span class="trade-note-sub">${escapeHtml(noteSub)}</span>` : ""}` : `<span class="empty">—</span>`}</td>
         <td class="num">${num(t.entry, 2)}</td>
         <td class="num">${num(t.initialStop, 2)}</td>
         <td class="num">${num(t.targetPrice, 2)}</td>
@@ -2852,7 +2881,7 @@
           </span>
         </td>
       </tr>`;
-      }).join("") : `<tr><td colspan="24" class="empty">${tradeTableDate ? "该日期无记录" : "无记录"}</td></tr>`;
+      }).join("") : `<tr><td colspan="25" class="empty">${tradeTableDate ? "该日期无记录" : "无记录"}</td></tr>`;
       $("tradeTable").innerHTML = head + `<tbody>${body}</tbody>`;
       document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => editTrade(btn.dataset.edit)));
       document.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", () => deleteTrade(btn.dataset.delete)));
@@ -3327,7 +3356,8 @@
           : `<strong>还没有可显示的交易日 K 线</strong>请先记录交易，再导入对应日期的 ATAS K 线 CSV。没有交易的日期不会显示图表或订单轨迹。`;
         const c = $("klineChart"), ctx = c.getContext("2d");
         clearCanvas(c, ctx);
-        c.onmousemove = null; c.onmouseleave = null; c.onwheel = null;
+        c.onmousemove = null; c.onmouseleave = null; c.onwheel = null; c.onmousedown = null; c.onmouseup = null;
+        c.style.cursor = "";
         return;
       }
       if (!klineDay || !days.includes(klineDay)) klineDay = days[days.length - 1];
@@ -3535,8 +3565,43 @@
         }
       };
       paint();
+      let dragState = null;
+      const updateKlineMeta = () => {
+        const count = Math.max(0, klineViewport.end - klineViewport.start);
+        $("klineMeta").textContent = `${klineDay} · ${count}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记`;
+      };
+      const panToStart = start => {
+        const count = Math.max(1, klineViewport.end - klineViewport.start);
+        const nextStart = Math.max(0, Math.min(candles.length - count, start));
+        klineViewport.start = nextStart;
+        klineViewport.end = nextStart + count;
+        paint();
+        updateKlineMeta();
+      };
+      c.style.cursor = (klineViewport.end - klineViewport.start) < candles.length ? "grab" : "crosshair";
+      c.onmousedown = e => {
+        if (e.button !== 0 || !candles.length) return;
+        const count = klineViewport.end - klineViewport.start;
+        if (count >= candles.length) return;
+        dragState = {x:e.clientX, start:klineViewport.start, count};
+        c.style.cursor = "grabbing";
+        e.preventDefault();
+      };
+      const finishKlineDrag = () => {
+        dragState = null;
+        c.style.cursor = (klineViewport.end - klineViewport.start) < candles.length ? "grab" : "crosshair";
+      };
+      c.onmouseup = finishKlineDrag;
       c.onmousemove = e => {
         if (!candles.length) return;
+        if (dragState) {
+          const rect = c.getBoundingClientRect();
+          const plotW = Math.max(1, rect.width - padL - padR);
+          const pxPerCandle = plotW / dragState.count;
+          const delta = Math.round((dragState.x - e.clientX) / Math.max(1, pxPerCandle));
+          panToStart(dragState.start + delta);
+          return;
+        }
         const rect = c.getBoundingClientRect(), rr = c.width / rect.width;
         const x = (e.clientX - rect.left) * rr;
         const visibleCount = klineViewport.end - klineViewport.start;
@@ -3545,7 +3610,10 @@
         i = Math.max(0, Math.min(visibleCount - 1, i));
         paint(i);
       };
-      c.onmouseleave = () => paint();
+      c.onmouseleave = () => {
+        if (dragState) finishKlineDrag();
+        else paint();
+      };
       c.onwheel = e => {
         if (!candles.length) return;
         e.preventDefault();
@@ -3559,7 +3627,8 @@
         klineViewport.start = start;
         klineViewport.end = start + next;
         paint();
-        $("klineMeta").textContent = `${klineDay} · ${next}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记`;
+        updateKlineMeta();
+        c.style.cursor = next < candles.length ? "grab" : "crosshair";
       };
     }
 
@@ -3828,6 +3897,14 @@
         renderManuals();
       }));
       fillManualForm();
+    }
+
+    function startNewManual() {
+      selectedManualId = "";
+      fillManualForm();
+      renderManuals();
+      $("manualName").focus();
+      setAuthStatus("新增策略模式：填写策略名称后点击保存策略");
     }
 
     function fillManualForm() {
@@ -4326,9 +4403,15 @@
 
     function saveManualForm() {
       const existing = $("manualId").value ? manuals.find(x => x.id === $("manualId").value) : null;
+      const name = $("manualName").value.trim();
+      if (!name) {
+        setAuthStatus("策略名称不能为空：请先填写策略名称，再保存策略");
+        $("manualName").focus();
+        return;
+      }
       const m = {
         id: $("manualId").value || "M" + Date.now(),
-        name: $("manualName").value.trim(),
+        name,
         market: $("manualMarket").value.trim(),
         status: $("manualStatus").value,
         reflection: $("manualReflection").value.trim(),
@@ -4339,13 +4422,17 @@
         modelImages: manualImages(existing),
         updatedAt: nowIso()
       };
-      if (!m.name) return;
       const i = manuals.findIndex(x => x.id === m.id);
       if (i >= 0) manuals[i] = m; else manuals.push(m);
       selectedManualId = m.id;
-      saveAll();
+      saveAll().then(result => {
+        if (result?.ok === false) setAuthStatus("策略已本地保存，云端同步失败，请稍后再保存一次");
+        else setAuthStatus(`策略已保存：${m.name}`);
+      });
       renderManuals();
       renderFilters();
+      renderStrategyOptions();
+      renderLearningNotes();
     }
 
     function parseCsv(text) {
@@ -4618,7 +4705,7 @@
     $("deleteLearning").addEventListener("click", deleteLearningForm);
     ["learningDate","learningStrategy","learningStrategyCustom","learningTitle","learningThoughts","learningReflection","learningKnowledge","learningCautions"].forEach(id => $(id).addEventListener("input", () => renderLearningAnalysis(draftLearningNote())));
     $("learningStrategy").addEventListener("change", () => renderLearningAnalysis(draftLearningNote()));
-    $("newStrategy").addEventListener("click", () => { selectedManualId = ""; fillManualForm(); renderManuals(); });
+    $("newStrategy").addEventListener("click", startNewManual);
     $("runReview").addEventListener("click", () => renderReview(filteredTrades()));
     $("exportCsv").addEventListener("click", exportCsv);
     $("csvInput").addEventListener("change", async (e) => {
