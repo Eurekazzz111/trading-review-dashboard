@@ -599,6 +599,15 @@
       line-height: 1.45;
     }
 
+    .manual-save-status {
+      font-size: 12px;
+      color: var(--muted);
+      margin-right: 8px;
+    }
+
+    .manual-save-status[data-state="ok"] { color: var(--green); }
+    .manual-save-status[data-state="error"] { color: var(--red); }
+
     .strategy-keywords {
       display: flex;
       flex-wrap: wrap;
@@ -1465,6 +1474,7 @@
             <div class="panel-head">
               <h3>策略长文</h3>
               <div class="toolbar-row">
+                <span id="manualSaveStatus" class="manual-save-status"></span>
                 <button id="saveStrategy" class="primary">保存策略</button>
               </div>
             </div>
@@ -3886,6 +3896,14 @@
       if (item) item.innerHTML = manualKeywordLineHtml(m);
     }
 
+    function setManualSaveStatus(message, state = "") {
+      const el = $("manualSaveStatus");
+      if (!el) return;
+      el.textContent = message || "";
+      if (state) el.dataset.state = state;
+      else delete el.dataset.state;
+    }
+
     function renderManuals() {
       $("strategyList").innerHTML = manuals.map(m => `<div class="strategy-item ${m.id === selectedManualId ? "active" : ""}" data-manual="${m.id}">
         <h4>${escapeHtml(m.name)} <span class="pill ${m.status === "Active" ? "green" : m.status === "Paused" ? "red" : "blue"}">${escapeHtml(m.status)}</span></h4>
@@ -3904,6 +3922,7 @@
       fillManualForm();
       renderManuals();
       $("manualName").focus();
+      setManualSaveStatus("新增模式", "ok");
       setAuthStatus("新增策略模式：填写策略名称后点击保存策略");
     }
 
@@ -4405,12 +4424,15 @@
       const existing = $("manualId").value ? manuals.find(x => x.id === $("manualId").value) : null;
       const name = $("manualName").value.trim();
       if (!name) {
+        setManualSaveStatus("请填写策略名称", "error");
         setAuthStatus("策略名称不能为空：请先填写策略名称，再保存策略");
         $("manualName").focus();
         return;
       }
+      const sameNameManual = manuals.find(x => x.name === name);
+      const shouldCreateNew = !existing || (existing.name !== name && !sameNameManual);
       const m = {
-        id: $("manualId").value || "M" + Date.now(),
+        id: shouldCreateNew ? "M" + Date.now() : (existing?.id || sameNameManual?.id || "M" + Date.now()),
         name,
         market: $("manualMarket").value.trim(),
         status: $("manualStatus").value,
@@ -4419,17 +4441,25 @@
         entry: $("manualEntry").value.trim(),
         exit: $("manualExit").value.trim(),
         invalid: $("manualInvalid").value.trim(),
-        modelImages: manualImages(existing),
+        modelImages: shouldCreateNew ? [] : manualImages(existing || sameNameManual),
         updatedAt: nowIso()
       };
       const i = manuals.findIndex(x => x.id === m.id);
-      if (i >= 0) manuals[i] = m; else manuals.push(m);
+      if (i >= 0) manuals[i] = m; else manuals.unshift(m);
       selectedManualId = m.id;
+      $("manualId").value = m.id;
+      setManualSaveStatus("已保存到左侧列表", "ok");
       saveAll().then(result => {
-        if (result?.ok === false) setAuthStatus("策略已本地保存，云端同步失败，请稍后再保存一次");
-        else setAuthStatus(`策略已保存：${m.name}`);
+        if (result?.ok === false) {
+          setManualSaveStatus("本地已保存，云端失败", "error");
+          setAuthStatus("策略已本地保存，云端同步失败，请稍后再保存一次");
+        } else {
+          setManualSaveStatus("已保存并同步", "ok");
+          setAuthStatus(`策略已保存：${m.name}`);
+        }
       });
       renderManuals();
+      $("strategyList").scrollTop = 0;
       renderFilters();
       renderStrategyOptions();
       renderLearningNotes();
