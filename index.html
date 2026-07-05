@@ -592,6 +592,23 @@
       font-size: 14px;
     }
 
+    .strategy-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .strategy-delete {
+      width: 26px;
+      height: 26px;
+      min-width: 26px;
+      padding: 0;
+      color: var(--red);
+      border-color: #e1b6b6;
+      background: #fff7f7;
+    }
+
     .strategy-item p {
       margin: 0;
       color: var(--muted);
@@ -1690,6 +1707,7 @@
     const LEARNING_KEY = "trading-review-learning-v1";
     const SETTINGS_KEY = "trading-review-settings-v1";
     const DELETED_TRADES_KEY = "trading-review-deleted-trades-v1";
+    const DELETED_MANUALS_KEY = "trading-review-deleted-manuals-v1";
     const LEGACY_IMAGE_STORAGE_KEY = "trading-review-images-v1";
     const DATA_VERSION_KEY = "trading-review-data-version";
     const CURRENT_DATA_VERSION = "empty-start-v1";
@@ -1749,8 +1767,9 @@
     const klineStorageReady = hydrateKlineStorage();
 
     let deletedTradeTombstones = loadDeletedTradeTombstones();
+    let deletedManualTombstones = loadDeletedManualTombstones();
     let trades = loadTrades().filter(t => !deletedTradeTombstones[String(t.id)]);
-    let manuals = loadManuals();
+    let manuals = loadManuals().filter(m => !deletedManualTombstones[String(m.id)]);
     let learningNotes = loadLearningNotes();
     let settings = loadSettings();
     let activeView = "dashboard";
@@ -1914,6 +1933,37 @@
         }
       });
       if (changed) saveDeletedTradeTombstones();
+    }
+
+    function loadDeletedManualTombstones() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(DELETED_MANUALS_KEY) || "{}");
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+        return Object.fromEntries(Object.entries(raw).filter(([id]) => id));
+      } catch {
+        return {};
+      }
+    }
+
+    function saveDeletedManualTombstones() {
+      localStorage.setItem(DELETED_MANUALS_KEY, JSON.stringify(deletedManualTombstones));
+    }
+
+    function markManualDeleted(id) {
+      if (!id) return;
+      deletedManualTombstones[String(id)] = nowIso();
+      saveDeletedManualTombstones();
+    }
+
+    function clearDeletedManualTombstones(ids = []) {
+      let changed = false;
+      ids.map(String).forEach(id => {
+        if (id in deletedManualTombstones) {
+          delete deletedManualTombstones[id];
+          changed = true;
+        }
+      });
+      if (changed) saveDeletedManualTombstones();
     }
 
     function loadManuals() {
@@ -2183,8 +2233,9 @@
       cloudReady = false;
       passwordRecoveryMode = false;
       deletedTradeTombstones = loadDeletedTradeTombstones();
+      deletedManualTombstones = loadDeletedManualTombstones();
       trades = loadTrades().filter(t => !deletedTradeTombstones[String(t.id)]);
-      manuals = loadManuals();
+      manuals = loadManuals().filter(m => !deletedManualTombstones[String(m.id)]);
       learningNotes = loadLearningNotes();
       settings = loadSettings();
       updateAuthUi();
@@ -2210,11 +2261,14 @@
       const localTrades = trades.slice();
       const localManuals = manuals.slice();
       const localLearning = learningNotes.slice();
-      const deletedIds = new Set(Object.keys(deletedTradeTombstones));
+      const deletedTradeIds = new Set(Object.keys(deletedTradeTombstones));
+      const deletedManualIds = new Set(Object.keys(deletedManualTombstones));
       const cloudTrades = (tradeRes.data || [])
-        .filter(row => !deletedIds.has(String(row.id)))
+        .filter(row => !deletedTradeIds.has(String(row.id)))
         .map(row => normalizeTradeRecord({id: row.id, ...(row.data || {})}));
-      const cloudManuals = (manualRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
+      const cloudManuals = (manualRes.data || [])
+        .filter(row => !deletedManualIds.has(String(row.id)))
+        .map(row => ({id: row.id, ...(row.data || {})}));
       const cloudLearning = (learningRes.data || []).map(row => ({id: row.id, ...(row.data || {})}));
       const cloudKlines = Object.fromEntries((klineRes.data || []).map(row => [row.day, row.candles || []]));
       const cloudKlineDays = Object.keys(cloudKlines);
@@ -2232,8 +2286,12 @@
       if (cloudKlineDays.length || !Object.keys(klineStore).length) klineStore = Object.assign({}, KLINE_DATA, cloudKlines);
       if (cloudKlineDays.length) await saveKlineLocalOnly(cloudKlines);
       cloudReady = true;
-      if (deletedIds.size) {
-        try { await deleteCloudTradesByIds([...deletedIds]); }
+      if (deletedTradeIds.size) {
+        try { await deleteCloudTradesByIds([...deletedTradeIds]); }
+        catch { /* tombstones stay local and will retry on next save/sync */ }
+      }
+      if (deletedManualIds.size) {
+        try { await deleteCloudManualsByIds([...deletedManualIds]); }
         catch { /* tombstones stay local and will retry on next save/sync */ }
       }
       if (shouldUploadMerged) {
@@ -2252,12 +2310,15 @@
       localStorage.setItem(LEARNING_KEY, JSON.stringify(learningNotes));
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       saveDeletedTradeTombstones();
+      saveDeletedManualTombstones();
     }
 
     async function saveCloudData() {
       if (!currentUser || !supabaseClient || !cloudReady) return {ok:true, skipped:true};
-      const deletedIds = Object.keys(deletedTradeTombstones);
-      if (deletedIds.length) await deleteCloudTradesByIds(deletedIds);
+      const deletedTradeIds = Object.keys(deletedTradeTombstones);
+      if (deletedTradeIds.length) await deleteCloudTradesByIds(deletedTradeIds);
+      const deletedManualIds = Object.keys(deletedManualTombstones);
+      if (deletedManualIds.length) await deleteCloudManualsByIds(deletedManualIds);
       const tradeRows = trades.map(t => ({
         id: String(t.id),
         user_id: currentUser.id,
@@ -2299,6 +2360,16 @@
       const {error} = await supabaseClient.from("trades").delete().eq("user_id", currentUser.id).in("id", uniqueIds);
       if (error) throw error;
       clearDeletedTradeTombstones(uniqueIds);
+      return {ok:true, deleted:uniqueIds.length};
+    }
+
+    async function deleteCloudManualsByIds(ids = []) {
+      const uniqueIds = [...new Set(ids.map(String).filter(Boolean))];
+      if (!uniqueIds.length) return {ok:true, skipped:true};
+      if (!currentUser || !supabaseClient || !cloudReady) return {ok:false, skipped:true};
+      const {error} = await supabaseClient.from("strategy_manuals").delete().eq("user_id", currentUser.id).in("id", uniqueIds);
+      if (error) throw error;
+      clearDeletedManualTombstones(uniqueIds);
       return {ok:true, deleted:uniqueIds.length};
     }
 
@@ -2802,7 +2873,7 @@
         const s = r.stats;
         const [label, cls] = sampleState(s.trades);
         return `<tr>
-          <td><span class="pill blue">${escapeHtml(r.key)}</span></td>
+          <td>${keywordTextPill(r.key)}</td>
           <td class="num">${s.trades}</td>
           <td class="num">${pct(s.winRate)}</td>
           <td class="num">${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}</td>
@@ -2819,7 +2890,7 @@
       const body = rows.length ? rows.map(r => {
         const s = r.stats;
         return `<tr>
-          <td><span class="pill blue">${escapeHtml(r.key)}</span></td>
+          <td>${keywordTextPill(r.key)}</td>
           <td class="num">${s.trades}</td>
           <td class="num ${pnlClass(s.total)}">${money(s.total)}</td>
           <td class="num ${pnlClass(s.totalPoints)}">${num(s.totalPoints, 1)}</td>
@@ -2862,12 +2933,12 @@
         return `<tr data-trade-row="${escapeHtml(t.id)}">
         <td>${t.date}<br><span class="small-note">${t.entryTime} → ${t.exitTime}</span></td>
         <td><span class="pill ${normalizeRecordType(t.recordType) === "live" ? "green" : "blue"}">${recordTypeLabel(t.recordType)}</span></td>
-        <td><span class="pill violet">${escapeHtml(t.session)}</span></td>
-        <td><span class="pill blue">${escapeHtml(t.dayPart)}</span></td>
+        <td>${keywordTextPill(t.session)}</td>
+        <td>${keywordTextPill(t.dayPart)}</td>
         <td>${escapeHtml(t.symbol)}</td>
         <td><span class="pill ${t.side === "Long" ? "green" : "red"}">${escapeHtml(t.side)}</span></td>
-        <td>${escapeHtml(t.strategy)}</td>
-        <td>${escapeHtml(t.entryLocation || "-")}</td>
+        <td>${keywordTextPill(t.strategy)}</td>
+        <td>${keywordTextPill(t.entryLocation)}</td>
         <td class="trade-note-cell">${noteMain ? `<span class="trade-note-main">${escapeHtml(noteMain)}</span>${noteSub ? `<span class="trade-note-sub">${escapeHtml(noteSub)}</span>` : ""}` : `<span class="empty">—</span>`}</td>
         <td class="num">${num(t.entry, 2)}</td>
         <td class="num">${num(t.initialStop, 2)}</td>
@@ -2881,9 +2952,9 @@
         <td class="num ${pnlClass(t.realizedR)}">${num(t.realizedR)}</td>
         <td class="num ${t.missedProfit > 0 ? "negative" : "neutral"}">${t.targetReached ? money(t.missedProfit) : "-"}</td>
         <td class="num">${num(t.holdingMinutes, 0)}m</td>
-        <td>${escapeHtml([t.exitReason, t.managementTag, t.managementReview].filter(Boolean).join(" / ") || "-")}</td>
+        <td>${keywordPillGroup([t.exitReason, t.managementTag, t.managementReview])}</td>
         <td><span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span></td>
-        <td>${escapeHtml([t.ruleViolation, t.emotionCause].filter(Boolean).join(" / ") || "-")}</td>
+        <td>${keywordPillGroup([t.ruleViolation, t.emotionCause])}</td>
         <td>
           <span class="row-actions">
             <button class="icon" data-edit="${t.id}" title="编辑交易" aria-label="编辑交易">✎</button>
@@ -3022,7 +3093,7 @@
         worst ? `最大亏损来自 ${worst.strategy || "-"}，持仓 ${num(worst.holdingMinutes,0)}m。` : ""
       ];
       $("dailyAiReview").innerHTML = `<div class="ai-card"><h4>${selectedDay} 复盘</h4><p>${points.filter(Boolean).join(" ")}</p></div>` +
-        rows.map(t => `<div class="ai-card"><h4>${escapeHtml(t.entryTime)} ${escapeHtml(t.symbol)} ${escapeHtml(t.side)}</h4><p>${escapeHtml(t.strategy)}${t.entryLocation ? ` · 位置: ${escapeHtml(t.entryLocation)}` : ""} · <span class="${pnlClass(t.netPnl)}">${money(t.netPnl)}</span> · ${num(t.points,1)} pts · ${num(t.holdingMinutes,0)}m${derivedTrade(t).ruleBroken ? ` · 破规则: ${escapeHtml(derivedTrade(t).ruleViolation || "未标注")}` : ""}${t.emotionCause ? ` · 情绪: ${escapeHtml(t.emotionCause)}` : ""}</p></div>`).join("");
+        rows.map(t => `<div class="ai-card"><h4>${escapeHtml(t.entryTime)} ${escapeHtml(t.symbol)} ${escapeHtml(t.side)}</h4><p>${keywordTextPill(t.strategy)}${t.entryLocation ? ` · 位置: ${keywordTextPill(t.entryLocation)}` : ""} · <span class="${pnlClass(t.netPnl)}">${money(t.netPnl)}</span> · ${num(t.points,1)} pts · ${num(t.holdingMinutes,0)}m${derivedTrade(t).ruleBroken ? ` · 破规则: ${keywordTextPill(derivedTrade(t).ruleViolation || "未标注")}` : ""}${t.emotionCause ? ` · 情绪: ${keywordTextPill(t.emotionCause)}` : ""}</p></div>`).join("");
     }
 
     function hourBlock(t) {
@@ -3645,19 +3716,19 @@
     function renderKlineTradeList(dayTrades) {
       $("klineTradeMeta").textContent = `${klineDay} · ${dayTrades.length} 笔`;
       if (!dayTrades.length) { $("klineTradeList").innerHTML = `<div class="kt-empty">这一天没有交易记录。在「交易日志」里录入当天的交易,这里会按顺序显示,并自动画到上方 K 线上。</div>`; return; }
-      const fld = (label, val) => `<div class="kt-field"><b>${label}</b>${val ? escapeHtml(val) : '<span class="empty">—</span>'}</div>`;
+      const fld = (label, val, asKeyword = false) => `<div class="kt-field"><b>${label}</b>${val ? (asKeyword ? keywordTextPill(val) : escapeHtml(val)) : '<span class="empty">—</span>'}</div>`;
       $("klineTradeList").innerHTML = dayTrades.map((t, i) => {
         const long = t.side === "Long";
         return `<div class="kt-card" data-kline-trade="${escapeHtml(t.id)}" title="点击跳到交易明细">
           <div class="kt-no ${long ? "long" : "short"}">${i + 1}</div>
           <div class="kt-body">
             <div class="kt-head">
-              <span class="kt-strat">${escapeHtml(t.strategy || "未填策略")}</span>
+              <span class="kt-strat">${keywordTextPill(t.strategy || "未填策略")}</span>
               <span class="pill ${long ? "green" : "red"}">${long ? "多 Long" : "空 Short"}</span>
               <span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span>
               <span class="small-note">${escapeHtml(t.entryTime || "")} → ${escapeHtml(t.exitTime || "")}</span>
             </div>
-            ${fld("开单位置", t.entryLocation)}
+            ${fld("开单位置", t.entryLocation, true)}
             ${fld("入场信号", t.entrySignal)}
             ${fld("入场点位选择原因", t.entryReason)}
             ${fld("备注", t.notes)}
@@ -3842,6 +3913,20 @@
       return `<span class="pill ${keywordClass(keyword)}">${escapeHtml(keyword)}</span>`;
     }
 
+    function keywordTextPill(value, fallback = "-") {
+      const text = String(value || "").trim();
+      if (!text || text === "-") return `<span class="market-label">${escapeHtml(fallback)}</span>`;
+      return keywordPill(text);
+    }
+
+    function keywordPillGroup(values = [], fallback = "-") {
+      const keys = values
+        .flatMap(value => String(value || "").split(/\s*\/\s*/))
+        .map(x => x.trim())
+        .filter(Boolean);
+      return keys.length ? keys.map(keywordPill).join("") : `<span class="market-label">${escapeHtml(fallback)}</span>`;
+    }
+
     function manualKeywords(m = {}) {
       return parseKeywordInput(m.keywords).slice(0, 18);
     }
@@ -3885,8 +3970,9 @@
     }
 
     function manualKeywordLineHtml(m = {}) {
+      const markets = parseKeywordInput(String(m.market || "").replace(/\//g, " ")).map(keywordPill).join("");
       const keys = manualKeywords(m).slice(0, 4).map(keywordPill).join("");
-      return `<span class="market-label">${escapeHtml(m.market || "")}</span>${keys || `<span class="market-label">${escapeHtml(m.entry || "暂无关键词")}</span>`}`;
+      return `${markets}${keys || `<span class="market-label">${escapeHtml(m.entry || "暂无关键词")}</span>`}`;
     }
 
     function updateSelectedManualPreview(m = {}) {
@@ -3906,7 +3992,10 @@
 
     function renderManuals() {
       $("strategyList").innerHTML = manuals.map(m => `<div class="strategy-item ${m.id === selectedManualId ? "active" : ""}" data-manual="${m.id}">
-        <h4>${escapeHtml(m.name)} <span class="pill ${m.status === "Active" ? "green" : m.status === "Paused" ? "red" : "blue"}">${escapeHtml(m.status)}</span></h4>
+        <div class="strategy-title-row">
+          <h4>${escapeHtml(m.name)} <span class="pill ${m.status === "Active" ? "green" : m.status === "Paused" ? "red" : "blue"}">${escapeHtml(m.status)}</span></h4>
+          <button type="button" class="icon strategy-delete" data-delete-manual="${escapeHtml(m.id)}" title="删除策略" aria-label="删除策略">×</button>
+        </div>
         <div class="strategy-keywords">${manualKeywordLineHtml(m)}</div>
       </div>`).join("");
       document.querySelectorAll("[data-manual]").forEach(el => el.addEventListener("click", () => {
@@ -3914,7 +4003,40 @@
         fillManualForm();
         renderManuals();
       }));
+      document.querySelectorAll("[data-delete-manual]").forEach(btn => btn.addEventListener("click", event => {
+        event.stopPropagation();
+        deleteManual(btn.dataset.deleteManual);
+      }));
       fillManualForm();
+    }
+
+    function deleteManual(id) {
+      const manual = manuals.find(x => String(x.id) === String(id));
+      if (!manual) return;
+      const name = manual.name || "未命名策略";
+      if (!window.confirm(`确定删除策略「${name}」吗？\n删除后会从左侧列表和云端同步删除。`)) return;
+      markManualDeleted(id);
+      manuals = manuals.filter(x => String(x.id) !== String(id));
+      if (String(selectedManualId) === String(id)) selectedManualId = manuals[0]?.id || "";
+      saveLocalOnly();
+      renderManuals();
+      renderFilters();
+      renderStrategyOptions();
+      renderLearningNotes();
+      setManualSaveStatus("策略已删除", "ok");
+      setAuthStatus(`策略已删除：${name}`);
+      saveAll().then(result => {
+        if (result?.ok === false) {
+          setManualSaveStatus("本地已删除，云端稍后重试", "error");
+          setAuthStatus("策略已本地删除，云端同步失败；下次保存或登录同步时会重试删除");
+        } else {
+          setManualSaveStatus("已删除并同步", "ok");
+          setAuthStatus(`策略已删除并同步：${name}`);
+        }
+      }).catch(error => {
+        setManualSaveStatus("本地已删除，云端失败", "error");
+        setAuthStatus(`策略本地已删除，云端同步失败：${error.message}`);
+      });
     }
 
     function startNewManual() {
