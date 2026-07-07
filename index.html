@@ -431,6 +431,20 @@
     .kt-right { text-align: right; white-space: nowrap; font-weight: 800; }
     .kt-right .small-note { font-weight: 400; }
     .kt-empty { color: var(--muted); font-size: 13px; }
+    .dashboard-day-trades {
+      display: grid;
+      gap: 9px;
+      max-height: 300px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .dashboard-day-trades .kt-card {
+      padding: 10px 12px;
+      grid-template-columns: 28px 1fr auto;
+    }
+    .dashboard-day-trades .kt-field {
+      font-size: 12px;
+    }
     @media (max-width: 560px) {
       .kt-card { grid-template-columns: 26px 1fr; }
       .kt-right { grid-column: 2; text-align: left; }
@@ -1320,10 +1334,10 @@
           </section>
           <section class="panel">
             <div class="panel-head">
-              <h3>持仓时间对比</h3>
-              <span class="meta">盈利单 vs 亏损单</span>
+              <h3>每日交易记录</h3>
+              <span class="meta" id="dailyTradeRecordMeta"></span>
             </div>
-            <div id="holdStats" class="ai-list"></div>
+            <div id="dailyTradeRecords" class="dashboard-day-trades"></div>
           </section>
           <section class="panel">
             <div class="panel-head">
@@ -1336,6 +1350,13 @@
 
         <div class="grid" style="margin-top:14px;">
           <div class="stack">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>持仓时间对比</h3>
+                <span class="meta">盈利单 vs 亏损单</span>
+              </div>
+              <div id="holdStats" class="ai-list"></div>
+            </section>
             <section class="panel">
               <div class="panel-head">
                 <h3>策略统计</h3>
@@ -2975,6 +2996,7 @@
       renderHoldStats(list);
       renderCalendar(list);
       renderDailySummary(list);
+      renderDailyTradeRecords(list);
     }
 
     function renderEntryLocationStats(list) {
@@ -3183,9 +3205,9 @@
       $("calendarGrid").innerHTML = dows + cells.join("");
       document.querySelectorAll("[data-day]").forEach(btn => btn.addEventListener("click", () => {
         selectedDay = btn.dataset.day;
-        tradeTableDate = selectedDay;
         renderCalendar(filteredTrades());
         renderDailySummary(filteredTrades());
+        renderDailyTradeRecords(filteredTrades());
       }));
     }
 
@@ -3207,6 +3229,41 @@
         $("dailySummaryText").value = "";
         saveDailySummaryNow(true);
       });
+    }
+
+    function renderDailyTradeRecords(list) {
+      const rows = list.filter(t => t.date === selectedDay).map(derivedTrade)
+        .sort((a, b) => String(a.entryTime || "").localeCompare(String(b.entryTime || "")));
+      $("dailyTradeRecordMeta").textContent = selectedDay ? `${selectedDay} · ${rows.length} 笔` : "";
+      if (!selectedDay) {
+        $("dailyTradeRecords").innerHTML = `<div class="kt-empty">暂无选中日期。</div>`;
+        return;
+      }
+      if (!rows.length) {
+        $("dailyTradeRecords").innerHTML = `<div class="kt-empty">这一天没有交易记录。</div>`;
+        return;
+      }
+      const fld = (label, val, asKeyword = false) => `<div class="kt-field"><b>${label}</b>${val ? (asKeyword ? keywordTextPill(val) : escapeHtml(val)) : '<span class="empty">—</span>'}</div>`;
+      $("dailyTradeRecords").innerHTML = rows.map((t, i) => {
+        const long = t.side === "Long";
+        return `<div class="kt-card">
+          <div class="kt-no ${long ? "long" : "short"}">${i + 1}</div>
+          <div class="kt-body">
+            <div class="kt-head">
+              <span class="kt-strat">${keywordTextPill(t.strategy || "未填策略")}</span>
+              <span class="pill ${long ? "green" : "red"}">${long ? "多 Long" : "空 Short"}</span>
+              <span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span>
+              <span class="small-note">${escapeHtml(t.entryTime || "")} → ${escapeHtml(t.exitTime || "")}</span>
+            </div>
+            ${fld("开单位置", t.entryLocation, true)}
+            ${fld("备注", t.notes || t.entryReason || t.entrySignal)}
+          </div>
+          <div class="kt-right">
+            <div class="${pnlClass(t.netPnl)}">${money(t.netPnl)}</div>
+            <div class="small-note">${num(t.points, 1)} pts · ${num(t.holdingMinutes, 0)}m</div>
+          </div>
+        </div>`;
+      }).join("");
     }
 
     function hourBlock(t) {
