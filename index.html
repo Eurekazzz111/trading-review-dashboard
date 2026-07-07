@@ -240,7 +240,7 @@
 
     .kpis {
       display: grid;
-      grid-template-columns: repeat(7, minmax(115px, 1fr));
+      grid-template-columns: repeat(6, minmax(130px, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
@@ -283,6 +283,22 @@
       margin-top: 5px;
       color: var(--muted);
       font-size: 12px;
+    }
+
+    .metric.secondary {
+      min-height: 72px;
+      background: #fdfcf9;
+      box-shadow: 0 6px 18px rgba(33, 22, 57, .04);
+    }
+
+    .metric.secondary .value {
+      font-size: 20px;
+    }
+
+    .metric.secondary .metric-visual {
+      opacity: .65;
+      transform: scale(.88);
+      transform-origin: right center;
     }
 
     .metric-visual {
@@ -434,16 +450,53 @@
     .dashboard-day-trades {
       display: grid;
       gap: 9px;
-      max-height: 300px;
+      height: 300px;
       overflow: auto;
       padding-right: 2px;
     }
-    .dashboard-day-trades .kt-card {
-      padding: 10px 12px;
-      grid-template-columns: 28px 1fr auto;
+
+    .dashboard-trade-card {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fff;
+      padding: 9px 10px;
+      display: grid;
+      gap: 6px;
     }
-    .dashboard-day-trades .kt-field {
+
+    .dashboard-trade-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .dashboard-trade-time {
+      color: #5f6170;
       font-size: 12px;
+      font-weight: 800;
+    }
+
+    .dashboard-trade-pnl {
+      margin-left: auto;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .dashboard-trade-sub {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .dashboard-trade-note {
+      min-width: 100%;
+      color: #4f554f;
+      overflow-wrap: anywhere;
     }
     @media (max-width: 560px) {
       .kt-card { grid-template-columns: 26px 1fr; }
@@ -681,12 +734,15 @@
 
     .daily-summary-box {
       display: grid;
+      grid-template-rows: 1fr auto;
       gap: 9px;
+      height: 300px;
     }
 
     .daily-summary-editor {
       width: 100%;
-      min-height: 142px;
+      min-height: 0;
+      height: 100%;
       resize: vertical;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -1071,9 +1127,9 @@
       box-shadow: inset 0 0 0 1px #6b7cff;
     }
 
-    .day-cell.win { background: #dbf4e8; border-color: #8be0bb; }
-    .day-cell.loss { background: #ffe0e3; border-color: #ff9fa8; }
-    .day-cell.flat { background: #e7ebff; border-color: #9eb0ff; }
+    .day-cell.win { background: #e7f6ef; border-color: #b7e6cf; }
+    .day-cell.loss { background: #fdecee; border-color: #f4c4ca; }
+    .day-cell.flat { background: #eef1ff; border-color: #c8d1ff; }
     .day-cell.empty-day { opacity: .55; cursor: default; }
 
     .day-num {
@@ -1163,10 +1219,11 @@
     }
 
     @media (max-width: 1200px) {
-      .kpis { grid-template-columns: repeat(4, 1fr); }
+      .kpis { grid-template-columns: repeat(3, 1fr); }
       .performance-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .grid { grid-template-columns: 1fr; }
       .dashboard-main { grid-template-columns: 1fr; }
+      .insight-grid { grid-template-columns: 1fr; }
       .manual-layout { grid-template-columns: 1fr; }
       .analysis-grid, .score-layout { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
@@ -1296,8 +1353,8 @@
             </section>
             <section class="panel half">
               <div class="panel-head">
-                <h3>Daily & cumulative net P&L</h3>
-                <span class="meta">Bars + equity</span>
+                <h3>每日盈亏 + 累计净值</h3>
+                <span class="meta">柱状 + 净值线</span>
               </div>
               <canvas id="dailyBarChart" width="900" height="260"></canvas>
             </section>
@@ -1311,7 +1368,7 @@
                   <button class="icon" id="nextMonth">›</button>
                 </div>
                 <div class="toolbar-row">
-                  <button id="thisMonth">This month</button>
+                  <button id="thisMonth">本月</button>
                   <span class="meta" id="monthlyStats"></span>
                 </div>
               </div>
@@ -2910,17 +2967,17 @@
       const items = [
         ["净盈亏", money(s.netPnl), `Total ${money(s.totalPnl)} · 费用 ${money(-s.totalFees)}`, pnlClass(s.netPnl), "bar", clamp01((s.netPnl + Math.abs(s.maxDrawdown || 0)) / Math.max(1, s.grossWin)) * 100],
         ["净点数", `${num(s.totalPoints, 1)} pts`, `平均 ${num(s.avgPoints, 2)} pts`, pnlClass(s.totalPoints), "bar", clamp01((s.avgPoints + 25) / 50) * 100],
-        ["Profit Factor", pf, `${money(s.grossWin)} / ${money(-s.grossLossAbs)}`, s.profitFactor >= 1.5 ? "positive" : s.profitFactor < 1 ? "negative" : "neutral", "ring", clamp01((Number.isFinite(s.profitFactor) ? s.profitFactor : 3) / 3) * 100],
-        ["Win Rate", pct(s.winRate), `${s.wins}W / ${s.losses}L`, s.winRate >= .5 ? "positive" : "neutral", "ring", s.winRate * 100],
+        ["PF", pf, `${money(s.grossWin)} / ${money(-s.grossLossAbs)}`, s.profitFactor >= 1.5 ? "positive" : s.profitFactor < 1 ? "negative" : "neutral", "ring", clamp01((Number.isFinite(s.profitFactor) ? s.profitFactor : 3) / 3) * 100],
+        ["胜率", pct(s.winRate), `${s.wins}W / ${s.losses}L`, s.winRate >= .5 ? "positive" : "neutral", "ring", s.winRate * 100],
         ["数学期望", money(s.expectancy), "每笔平均", pnlClass(s.expectancy), "bar", clamp01((s.expectancy + Math.max(1, s.avgWin)) / Math.max(1, s.avgWin * 2)) * 100],
-        ["Avg Win / Avg Loss", `<span class="positive">${money(s.avgWin)}</span> / <span class="negative">${money(-s.avgLoss)}</span>`, "平均盈利 / 平均亏损", "", "bars", clamp01(s.payoff / 3) * 100],
+        ["平均盈亏", `<span class="positive">${money(s.avgWin)}</span> / <span class="negative">${money(-s.avgLoss)}</span>`, "平均盈利 / 平均亏损", "", "bars", clamp01(s.payoff / 3) * 100],
         ["盈亏比", s.payoff === Infinity ? "∞" : num(s.payoff), "Avg Win ÷ Avg Loss", s.payoff >= 1.5 ? "positive" : s.payoff < 1 ? "negative" : "neutral", "ring", clamp01(s.payoff / 3) * 100],
         ["Realized R", num(s.avgRealizedR, 2), `总R ${num(s.totalRealizedR, 2)}`, pnlClass(s.avgRealizedR), "bar", clamp01((Number(s.avgRealizedR || 0) + 1) / 2) * 100],
         ["目标错失", money(s.missedProfit), `${s.targetReachedCount} 笔后续到目标`, s.missedProfit > 0 ? "negative" : "neutral", "bar", clamp01(s.missedProfit / Math.max(1, s.grossWin)) * 100],
-        ["Worst Trade", money(s.worstTrade), "最大单笔亏损", s.worstTrade < 0 ? "negative" : "neutral", "ring", clamp01(1 - Math.abs(Math.min(0, Number(s.worstTrade || 0))) / Math.max(1, s.grossLossAbs)) * 100]
+        ["最大单笔亏损", money(s.worstTrade), "Worst Trade", s.worstTrade < 0 ? "negative" : "neutral", "ring", clamp01(1 - Math.abs(Math.min(0, Number(s.worstTrade || 0))) / Math.max(1, s.grossLossAbs)) * 100]
       ];
-      $("kpis").innerHTML = items.map(([label, value, sub, cls, visual, pctValue]) => `
-        <div class="metric">
+      $("kpis").innerHTML = items.map(([label, value, sub, cls, visual, pctValue], index) => `
+        <div class="metric ${index >= 6 ? "secondary" : ""}">
           <div class="metric-main">
             <div class="label">${label}</div>
             <div class="value ${cls}">${value}</div>
@@ -3186,7 +3243,7 @@
         return dt.getFullYear() === year && dt.getMonth() === month;
       });
       const monthStats = calcStats(monthRows.flatMap(d => d.rows));
-      $("monthlyStats").innerHTML = `Monthly stats: <span class="${pnlClass(monthStats.total)}">${money(monthStats.total)}</span> · ${monthStats.trades} trades · PF ${monthStats.profitFactor === Infinity ? "∞" : num(monthStats.profitFactor)}`;
+      $("monthlyStats").innerHTML = `本月统计：<span class="${pnlClass(monthStats.total)}">${money(monthStats.total)}</span> · ${monthStats.trades} 笔 · PF ${monthStats.profitFactor === Infinity ? "∞" : num(monthStats.profitFactor)}`;
       const dows = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => `<div class="dow">${d}</div>`).join("");
       const cells = [];
       for (let i=0; i<42; i++) {
@@ -3199,7 +3256,7 @@
         const active = selectedDay === key ? "active" : "";
         cells.push(`<button class="day-cell ${cls} ${active}" data-day="${key}" ${inMonth || row ? "" : "disabled"}>
           <span class="day-num">${d.getDate()}</span>
-          ${row ? `<div class="day-pnl ${pnlClass(row.stats.total)}">${money(row.stats.total)}</div><div class="day-meta">${row.stats.trades} trades</div><span class="day-dot"></span>` : ""}
+          ${row ? `<div class="day-pnl ${pnlClass(row.stats.total)}">${money(row.stats.total)}</div><div class="day-meta">${row.stats.trades} 笔</div><span class="day-dot"></span>` : ""}
         </button>`);
       }
       $("calendarGrid").innerHTML = dows + cells.join("");
@@ -3243,24 +3300,22 @@
         $("dailyTradeRecords").innerHTML = `<div class="kt-empty">这一天没有交易记录。</div>`;
         return;
       }
-      const fld = (label, val, asKeyword = false) => `<div class="kt-field"><b>${label}</b>${val ? (asKeyword ? keywordTextPill(val) : escapeHtml(val)) : '<span class="empty">—</span>'}</div>`;
       $("dailyTradeRecords").innerHTML = rows.map((t, i) => {
         const long = t.side === "Long";
-        return `<div class="kt-card">
-          <div class="kt-no ${long ? "long" : "short"}">${i + 1}</div>
-          <div class="kt-body">
-            <div class="kt-head">
-              <span class="kt-strat">${keywordTextPill(t.strategy || "未填策略")}</span>
-              <span class="pill ${long ? "green" : "red"}">${long ? "多 Long" : "空 Short"}</span>
-              <span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span>
-              <span class="small-note">${escapeHtml(t.entryTime || "")} → ${escapeHtml(t.exitTime || "")}</span>
-            </div>
-            ${fld("开单位置", t.entryLocation, true)}
-            ${fld("备注", t.notes || t.entryReason || t.entrySignal)}
+        const note = t.notes || t.entryReason || t.entrySignal || "";
+        return `<div class="dashboard-trade-card">
+          <div class="dashboard-trade-top">
+            <span class="dashboard-trade-time">${i + 1}. ${escapeHtml(t.entryTime || "")} → ${escapeHtml(t.exitTime || "")}</span>
+            <span class="pill ${long ? "green" : "red"}">${long ? "多" : "空"}</span>
+            <span class="pill ${t.ruleBroken ? "red" : "green"}">${t.ruleBroken ? "破规则" : "守规则"}</span>
+            ${keywordTextPill(t.strategy || "未填策略")}
+            <span class="dashboard-trade-pnl ${pnlClass(t.netPnl)}">${money(t.netPnl)}</span>
           </div>
-          <div class="kt-right">
-            <div class="${pnlClass(t.netPnl)}">${money(t.netPnl)}</div>
-            <div class="small-note">${num(t.points, 1)} pts · ${num(t.holdingMinutes, 0)}m</div>
+          <div class="dashboard-trade-sub">
+            <span>点数 ${num(t.points, 1)} pts</span>
+            <span>持仓 ${num(t.holdingMinutes, 0)}m</span>
+            ${t.entryLocation ? `<span>位置 ${keywordTextPill(t.entryLocation)}</span>` : ""}
+            ${note ? `<span class="dashboard-trade-note">备注：${escapeHtml(note)}</span>` : ""}
           </div>
         </div>`;
       }).join("");
