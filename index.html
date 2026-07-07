@@ -670,16 +670,6 @@
       gap: 9px;
     }
 
-    .daily-summary-auto {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fbfaf7;
-      padding: 10px 11px;
-      color: #4d534f;
-      line-height: 1.55;
-      font-size: 13px;
-    }
-
     .daily-summary-editor {
       width: 100%;
       min-height: 142px;
@@ -2133,21 +2123,6 @@
       else delete store[day];
     }
 
-    function dailySummaryAutoLine(day, rows = []) {
-      if (!day) return "先在上方日历选择日期，再填写当天做得好/不好的地方。";
-      if (!rows.length) return `${day} 暂无交易记录。可以记录休息、复盘、错过机会或当天状态。`;
-      const s = calcStats(rows);
-      const broken = rows.filter(t => derivedTrade(t).ruleBroken);
-      const emotions = unique(rows.map(t => t.emotionCause)).filter(Boolean);
-      const worst = rows.filter(t => toNum(t.netPnl) !== null).sort((a,b) => Number(a.netPnl) - Number(b.netPnl))[0];
-      return [
-        `${day}：${rows.length} 笔，净盈亏 ${money(s.total)}，点数 ${num(s.totalPoints, 1)} pts，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}。`,
-        broken.length ? `破规则 ${broken.length} 笔，主要问题：${unique(broken.map(t => t.ruleViolation)).filter(Boolean).join(" / ") || "未标注"}。` : "纪律：未标记破规则。",
-        emotions.length ? `情绪标签：${emotions.join(" / ")}。` : "",
-        worst ? `最大亏损：${worst.strategy || "-"}，持仓 ${num(worst.holdingMinutes,0)}m。` : ""
-      ].filter(Boolean).join(" ");
-    }
-
     function setDailySummaryStatus(message, state = "") {
       const el = $("dailySummaryStatus");
       if (!el) return;
@@ -3211,17 +3186,14 @@
         tradeTableDate = selectedDay;
         renderCalendar(filteredTrades());
         renderDailySummary(filteredTrades());
-        focusTradeDateInDetails(selectedDay);
       }));
     }
 
     function renderDailySummary(list) {
-      const rows = list.filter(t => t.date === selectedDay);
       $("selectedDayLabel").textContent = selectedDay || "";
       const summary = getDailySummary(selectedDay);
       $("dailyAiReview").innerHTML = `
         <div class="daily-summary-box">
-          <div class="daily-summary-auto">${escapeHtml(dailySummaryAutoLine(selectedDay, rows))}</div>
           <textarea id="dailySummaryText" class="daily-summary-editor" placeholder="写当天总结：今天哪里做得好？哪里做得不好？有没有违反计划？明天要改什么？">${escapeHtml(summary)}</textarea>
           <div class="daily-summary-actions">
             <button id="dailySummarySave" class="primary" type="button">保存总结</button>
@@ -3613,9 +3585,8 @@
     function renderKlineDailySummary() {
       const el = $("klineDailySummary");
       if (!el) return;
-      const rows = filteredTrades().filter(t => t.date === klineDay);
       const summary = getDailySummary(klineDay);
-      el.innerHTML = `<b>${escapeHtml(klineDay || "当日")} 每日总结</b><p>${summary ? escapeHtml(summary) : `${escapeHtml(dailySummaryAutoLine(klineDay, rows))} 还没有手写总结，可回到总览页在日历下方填写。`}</p>`;
+      el.innerHTML = `<b>${escapeHtml(klineDay || "当日")} 每日总结</b><p>${summary ? escapeHtml(summary) : ""}</p>`;
     }
 
     function selectKlineMonth(months, index, days) {
