@@ -1155,6 +1155,14 @@
       margin-top: 2px;
     }
 
+    .day-winrate {
+      text-align: right;
+      color: #807a8e;
+      font-size: 11px;
+      margin-top: 1px;
+      line-height: 1.2;
+    }
+
     .day-dot {
       position: absolute;
       right: 8px;
@@ -3254,9 +3262,10 @@
         const inMonth = d.getMonth() === month;
         const cls = row ? row.stats.total > 0 ? "win" : row.stats.total < 0 ? "loss" : "flat" : !inMonth ? "empty-day" : "";
         const active = selectedDay === key ? "active" : "";
+        const winRateText = row ? pct(row.stats.winRate) : "";
         cells.push(`<button class="day-cell ${cls} ${active}" data-day="${key}" ${inMonth || row ? "" : "disabled"}>
           <span class="day-num">${d.getDate()}</span>
-          ${row ? `<div class="day-pnl ${pnlClass(row.stats.total)}">${money(row.stats.total)}</div><div class="day-meta">${row.stats.trades} 笔</div><span class="day-dot"></span>` : ""}
+          ${row ? `<div class="day-pnl ${pnlClass(row.stats.total)}">${money(row.stats.total)}</div><div class="day-meta">${row.stats.trades} 笔</div><div class="day-winrate">胜率 ${winRateText}</div><span class="day-dot"></span>` : ""}
         </button>`);
       }
       $("calendarGrid").innerHTML = dows + cells.join("");
