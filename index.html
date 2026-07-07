@@ -624,6 +624,8 @@
 
     .manual-save-status[data-state="ok"] { color: var(--green); }
     .manual-save-status[data-state="error"] { color: var(--red); }
+    #dailySummaryStatus[data-state="ok"] { color: var(--green); }
+    #dailySummaryStatus[data-state="error"] { color: var(--red); }
 
     .strategy-keywords {
       display: flex;
@@ -661,6 +663,61 @@
       color: #4d534f;
       line-height: 1.55;
       font-size: 13px;
+    }
+
+    .daily-summary-box {
+      display: grid;
+      gap: 9px;
+    }
+
+    .daily-summary-auto {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfaf7;
+      padding: 10px 11px;
+      color: #4d534f;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .daily-summary-editor {
+      width: 100%;
+      min-height: 142px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      font: inherit;
+      line-height: 1.55;
+      background: white;
+    }
+
+    .daily-summary-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .daily-summary-kline {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfaf7;
+      padding: 10px 12px;
+      margin: 8px 0 10px;
+      color: #4d534f;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .daily-summary-kline b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .daily-summary-kline p {
+      margin: 0;
     }
 
     .reflection-box {
@@ -1280,7 +1337,7 @@
           </section>
           <section class="panel">
             <div class="panel-head">
-              <h3>当日 AI 复盘</h3>
+              <h3>每日总结</h3>
               <span class="meta" id="selectedDayLabel"></span>
             </div>
             <div id="dailyAiReview" class="ai-list"></div>
@@ -1429,6 +1486,7 @@
               <button id="klineResetZoom">重置缩放</button>
               <span class="hint">鼠标滚轮缩放，鼠标悬停位置为缩放中心</span>
             </div>
+            <div id="klineDailySummary" class="daily-summary-kline"></div>
             <div class="kline-days" id="klineDays"></div>
             <canvas id="klineChart"></canvas>
             <div class="kline-legend">
@@ -1783,6 +1841,7 @@
     let tradeTableDate = "";
     let manualDayPartTouched = false;
     let tradeAutosaveTimer = null;
+    let dailySummarySaveTimer = null;
     let tradeAutosavePaused = false;
     let cloudSaveInFlight = false;
     let cloudSaveQueued = false;
@@ -1979,10 +2038,14 @@
     }
 
     function loadSettings() {
-      const defaults = {NQ:20, MNQ:2, ES:50, MES:5, startingBalance:0};
+      const defaults = {NQ:20, MNQ:2, ES:50, MES:5, startingBalance:0, dailySummaries:{}};
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (!raw) return defaults;
-      try { return {...defaults, ...JSON.parse(raw)}; } catch { return defaults; }
+      try {
+        const merged = {...defaults, ...JSON.parse(raw)};
+        if (!merged.dailySummaries || typeof merged.dailySummaries !== "object" || Array.isArray(merged.dailySummaries)) merged.dailySummaries = {};
+        return merged;
+      } catch { return defaults; }
     }
 
     function openKlineDb() {
@@ -2050,6 +2113,83 @@
     function saveAll() {
       saveLocalOnly();
       return queueCloudDataSave().catch(error => ({ok:false, error}));
+    }
+
+    function dailySummaryStore() {
+      if (!settings.dailySummaries || typeof settings.dailySummaries !== "object" || Array.isArray(settings.dailySummaries)) settings.dailySummaries = {};
+      return settings.dailySummaries;
+    }
+
+    function getDailySummary(day) {
+      const entry = dailySummaryStore()[day];
+      return typeof entry === "string" ? entry : String(entry?.text || "");
+    }
+
+    function setDailySummary(day, text) {
+      if (!day) return;
+      const store = dailySummaryStore();
+      const clean = String(text || "").trim();
+      if (clean) store[day] = {text: clean, updatedAt: nowIso()};
+      else delete store[day];
+    }
+
+    function dailySummaryAutoLine(day, rows = []) {
+      if (!day) return "先在上方日历选择日期，再填写当天做得好/不好的地方。";
+      if (!rows.length) return `${day} 暂无交易记录。可以记录休息、复盘、错过机会或当天状态。`;
+      const s = calcStats(rows);
+      const broken = rows.filter(t => derivedTrade(t).ruleBroken);
+      const emotions = unique(rows.map(t => t.emotionCause)).filter(Boolean);
+      const worst = rows.filter(t => toNum(t.netPnl) !== null).sort((a,b) => Number(a.netPnl) - Number(b.netPnl))[0];
+      return [
+        `${day}：${rows.length} 笔，净盈亏 ${money(s.total)}，点数 ${num(s.totalPoints, 1)} pts，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}。`,
+        broken.length ? `破规则 ${broken.length} 笔，主要问题：${unique(broken.map(t => t.ruleViolation)).filter(Boolean).join(" / ") || "未标注"}。` : "纪律：未标记破规则。",
+        emotions.length ? `情绪标签：${emotions.join(" / ")}。` : "",
+        worst ? `最大亏损：${worst.strategy || "-"}，持仓 ${num(worst.holdingMinutes,0)}m。` : ""
+      ].filter(Boolean).join(" ");
+    }
+
+    function setDailySummaryStatus(message, state = "") {
+      const el = $("dailySummaryStatus");
+      if (!el) return;
+      el.textContent = message || "";
+      if (state) el.dataset.state = state;
+      else delete el.dataset.state;
+    }
+
+    function saveDailySummaryNow(sync = true, day = selectedDay, text = null) {
+      const area = $("dailySummaryText");
+      if (!day) return;
+      const value = text === null ? (area?.value || "") : text;
+      setDailySummary(day, value);
+      saveLocalOnly();
+      setDailySummaryStatus("本地已保存", "ok");
+      if (klineDay === day) renderKlineDailySummary();
+      if (!sync) return;
+      saveAll().then(result => {
+        if (result?.ok === false) {
+          setDailySummaryStatus("本地已保存，云端失败", "error");
+          setAuthStatus("每日总结已本地保存，云端同步失败；稍后可再点保存总结");
+        } else {
+          setDailySummaryStatus("已保存并同步", "ok");
+          setAuthStatus(`每日总结已保存：${day}`);
+        }
+      }).catch(error => {
+        setDailySummaryStatus("本地已保存，云端失败", "error");
+        setAuthStatus(`每日总结云端同步失败：${error.message}`);
+      });
+    }
+
+    function scheduleDailySummarySave() {
+      const area = $("dailySummaryText");
+      const day = selectedDay;
+      const text = area?.value || "";
+      if (!day) return;
+      setDailySummary(day, text);
+      saveLocalOnly();
+      if (klineDay === day) renderKlineDailySummary();
+      clearTimeout(dailySummarySaveTimer);
+      setDailySummaryStatus("正在保存...", "");
+      dailySummarySaveTimer = setTimeout(() => saveDailySummaryNow(true, day, text), 700);
     }
 
     function setAuthStatus(message) {
@@ -2859,7 +2999,7 @@
       renderDisciplineStats(list);
       renderHoldStats(list);
       renderCalendar(list);
-      renderDailyAiReview(list);
+      renderDailySummary(list);
     }
 
     function renderEntryLocationStats(list) {
@@ -3033,7 +3173,7 @@
         $("monthlyStats").textContent = "";
         return;
       }
-      if (!selectedDay || !list.some(t => t.date === selectedDay)) {
+      if (!selectedDay) {
         selectedDay = list.at(-1).date;
         calendarCursor = new Date(selectedDay + "T00:00:00");
       }
@@ -3070,30 +3210,31 @@
         selectedDay = btn.dataset.day;
         tradeTableDate = selectedDay;
         renderCalendar(filteredTrades());
-        renderDailyAiReview(filteredTrades());
+        renderDailySummary(filteredTrades());
         focusTradeDateInDetails(selectedDay);
       }));
     }
 
-    function renderDailyAiReview(list) {
+    function renderDailySummary(list) {
       const rows = list.filter(t => t.date === selectedDay);
-      const s = calcStats(rows);
       $("selectedDayLabel").textContent = selectedDay || "";
-      if (!rows.length) {
-        $("dailyAiReview").innerHTML = `<div class="ai-card"><h4>当日无交易</h4><p>点击月历中有交易的日期查看当日复盘。</p></div>`;
-        return;
-      }
-      const broken = rows.filter(t => derivedTrade(t).ruleBroken);
-      const emotions = unique(rows.map(t => t.emotionCause)).filter(Boolean);
-      const worst = rows.filter(t => toNum(t.netPnl) !== null).sort((a,b) => Number(a.netPnl) - Number(b.netPnl))[0];
-      const points = [
-        `当日 ${rows.length} 笔，净盈亏 ${money(s.total)}，点数 ${num(s.totalPoints, 1)} pts，PF ${s.profitFactor === Infinity ? "∞" : num(s.profitFactor)}。`,
-        broken.length ? `有 ${broken.length} 笔破规则，主要标签：${unique(broken.map(t => t.ruleViolation)).filter(Boolean).join(" / ") || "未标注"}。` : "当天没有标记破规则交易。",
-        emotions.length ? `情绪原因：${emotions.join(" / ")}。` : "未记录情绪原因。",
-        worst ? `最大亏损来自 ${worst.strategy || "-"}，持仓 ${num(worst.holdingMinutes,0)}m。` : ""
-      ];
-      $("dailyAiReview").innerHTML = `<div class="ai-card"><h4>${selectedDay} 复盘</h4><p>${points.filter(Boolean).join(" ")}</p></div>` +
-        rows.map(t => `<div class="ai-card"><h4>${escapeHtml(t.entryTime)} ${escapeHtml(t.symbol)} ${escapeHtml(t.side)}</h4><p>${keywordTextPill(t.strategy)}${t.entryLocation ? ` · 位置: ${keywordTextPill(t.entryLocation)}` : ""} · <span class="${pnlClass(t.netPnl)}">${money(t.netPnl)}</span> · ${num(t.points,1)} pts · ${num(t.holdingMinutes,0)}m${derivedTrade(t).ruleBroken ? ` · 破规则: ${keywordTextPill(derivedTrade(t).ruleViolation || "未标注")}` : ""}${t.emotionCause ? ` · 情绪: ${keywordTextPill(t.emotionCause)}` : ""}</p></div>`).join("");
+      const summary = getDailySummary(selectedDay);
+      $("dailyAiReview").innerHTML = `
+        <div class="daily-summary-box">
+          <div class="daily-summary-auto">${escapeHtml(dailySummaryAutoLine(selectedDay, rows))}</div>
+          <textarea id="dailySummaryText" class="daily-summary-editor" placeholder="写当天总结：今天哪里做得好？哪里做得不好？有没有违反计划？明天要改什么？">${escapeHtml(summary)}</textarea>
+          <div class="daily-summary-actions">
+            <button id="dailySummarySave" class="primary" type="button">保存总结</button>
+            <button id="dailySummaryClear" type="button">清空当天总结</button>
+            <span class="meta" id="dailySummaryStatus">${summary ? "已加载当天总结" : "未填写当天总结"}</span>
+          </div>
+        </div>`;
+      $("dailySummaryText").addEventListener("input", scheduleDailySummarySave);
+      $("dailySummarySave").addEventListener("click", () => saveDailySummaryNow(true));
+      $("dailySummaryClear").addEventListener("click", () => {
+        $("dailySummaryText").value = "";
+        saveDailySummaryNow(true);
+      });
     }
 
     function hourBlock(t) {
@@ -3432,6 +3573,7 @@
         klineMonth = "";
         const filteredTradeDays = tradeCounts.size;
         $("klineMeta").textContent = storedDays.length ? `已保存 ${storedDays.length} 天 K 线` : "";
+        if ($("klineDailySummary")) $("klineDailySummary").innerHTML = "";
         $("klineEmptyState").innerHTML = storedDays.length
           ? `<strong>当前没有可显示的交易日 K 线</strong>已保存 ${storedDays.length} 天 K 线，当前筛选范围有 ${filteredTradeDays} 个交易日。只有同时存在交易记录和 K 线数据的日期才会显示图表与订单轨迹。`
           : `<strong>还没有可显示的交易日 K 线</strong>请先记录交易，再导入对应日期的 ATAS K 线 CSV。没有交易的日期不会显示图表或订单轨迹。`;
@@ -3464,7 +3606,16 @@
       $("klineNextMonth").onclick = () => selectKlineMonth(months, monthIndex + 1, days);
       $("klineDays").innerHTML = monthDays.map(d => `<button data-kday="${d}" class="${d === klineDay ? "on" : ""}"><span>${d.slice(5)}</span><small>${tradeCounts.get(d)} 笔交易</small></button>`).join("");
       document.querySelectorAll("[data-kday]").forEach(b => b.onclick = () => { klineDay = b.dataset.kday; resetKlineViewport(); renderKline(); });
+      renderKlineDailySummary();
       drawKline();
+    }
+
+    function renderKlineDailySummary() {
+      const el = $("klineDailySummary");
+      if (!el) return;
+      const rows = filteredTrades().filter(t => t.date === klineDay);
+      const summary = getDailySummary(klineDay);
+      el.innerHTML = `<b>${escapeHtml(klineDay || "当日")} 每日总结</b><p>${summary ? escapeHtml(summary) : `${escapeHtml(dailySummaryAutoLine(klineDay, rows))} 还没有手写总结，可回到总览页在日历下方填写。`}</p>`;
     }
 
     function selectKlineMonth(months, index, days) {
@@ -4726,6 +4877,7 @@
 
     function saveSettingsForm() {
       settings = {
+        ...settings,
         startingBalance: Math.max(0, Number($("settingStartingBalance").value || 0)),
         NQ: Number($("settingNQ").value || 20),
         MNQ: Number($("settingMNQ").value || 2),
