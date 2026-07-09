@@ -4889,22 +4889,65 @@
       }).filter(t => t.date && t.symbol);
     }
 
+    function importTradeSignature(t = {}) {
+      const d = normalizeTradeRecord(t);
+      const price = v => {
+        const n = toNum(v);
+        return n === null ? "" : String(Math.round(n * 10000) / 10000);
+      };
+      return [
+        d.date,
+        d.entryTime,
+        d.exitTime,
+        d.symbol,
+        d.side,
+        price(d.entry),
+        price(d.exit)
+      ].join("|");
+    }
+
     function mergeImportedTrades(existingTrades, importedTrades) {
-      const merged = [...existingTrades];
-      const knownIds = new Set(existingTrades.map(t => String(t.id || "").trim()).filter(Boolean));
-      let added = 0;
-      let skipped = 0;
-      importedTrades.forEach(t => {
+      const merged = existingTrades.map(t => normalizeTradeRecord(t));
+      const idToIndex = new Map();
+      const signatureToIndex = new Map();
+      merged.forEach((t, index) => {
         const id = String(t.id || "").trim();
-        if (!id || knownIds.has(id)) {
+        if (id) idToIndex.set(id, index);
+        const signature = importTradeSignature(t);
+        if (signature.replaceAll("|", "")) signatureToIndex.set(signature, index);
+      });
+      const restoredIds = [];
+      let added = 0;
+      let updated = 0;
+      let skipped = 0;
+      importedTrades.forEach(raw => {
+        const t = normalizeTradeRecord(raw);
+        const id = String(t.id || "").trim();
+        const signature = importTradeSignature(t);
+        let index = id ? idToIndex.get(id) : undefined;
+        if (index === undefined && signature.replaceAll("|", "")) index = signatureToIndex.get(signature);
+        if (index !== undefined) {
+          const next = {...merged[index], ...t, id: id || merged[index].id};
+          merged[index] = normalizeTradeRecord(next);
+          if (next.id) restoredIds.push(next.id);
+          updated++;
+          return;
+        }
+        if (!id && !signature.replaceAll("|", "")) {
           skipped++;
           return;
         }
-        knownIds.add(id);
         merged.push(t);
+        const newIndex = merged.length - 1;
+        if (id) {
+          idToIndex.set(id, newIndex);
+          restoredIds.push(id);
+        }
+        if (signature.replaceAll("|", "")) signatureToIndex.set(signature, newIndex);
         added++;
       });
-      return {trades: merged, added, skipped, retained: existingTrades.length};
+      clearDeletedTradeTombstones(restoredIds);
+      return {trades: merged, added, updated, skipped, retained: existingTrades.length};
     }
 
     async function readCsvFileText(file) {
@@ -5114,7 +5157,7 @@
         trades = result.trades;
         saveAll();
         render();
-        setAuthStatus(`CSV 合并完成：保留 ${result.retained} 笔，新增 ${result.added} 笔，跳过重复 ID ${result.skipped} 笔。`);
+        setAuthStatus(`CSV 合并完成：原有 ${result.retained} 笔，新增 ${result.added} 笔，更新覆盖 ${result.updated} 笔，跳过 ${result.skipped} 笔。`);
       }
       e.target.value = "";
     });
