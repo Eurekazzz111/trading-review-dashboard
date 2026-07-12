@@ -3687,10 +3687,8 @@
         if (day) tradeCounts.set(day, (tradeCounts.get(day) || 0) + 1);
       });
       const storedDays = Object.keys(klineStore).filter(day => Array.isArray(klineStore[day]) && klineStore[day].length).sort();
-      const saturdayAliases = [...tradeCounts.keys()].filter(day =>
-        isSaturday(day) && !klineStore[day]?.length && klineSourceDayForDisplay(day) !== day
-      );
-      const days = [...new Set([...storedDays, ...saturdayAliases])].filter(day => tradeCounts.has(day)).sort();
+      // 日期导航保留交易记录的北京时间日期；是否可复盘由同一北京时间日期的 K 线决定。
+      const days = [...tradeCounts.keys()].filter(day => klineRowsForDay(day).rows.length).sort();
       const months = [...new Set(days.map(day => day.slice(0, 7)))].sort();
       document.querySelectorAll("[data-ktf]").forEach(b => {
         b.classList.toggle("on", Number(b.dataset.ktf) === klineTimeframe);
@@ -3761,7 +3759,210 @@
     function resetKlineViewport() {
       klineViewport = {key:"", start:0, end:0};
     }
+    /*
+      时区规则：
+      - 手工交易记录 date / entryTime / exitTime：北京时间 Asia/Shanghai
+      - ATAS K线导出时间：CME Chicago 时间 America/Chicago
+      - K线与交易按 CME Trading Day 匹配
+      - CME Trading Day 在 Chicago 当地时间 17:00 切换到下一个交易日
+    */
+    const DISPLAY_TIME_ZONE = "Asia/Shanghai";
+    const CME_TIME_ZONE = "America/Chicago";
+    const CME_SESSION_ROLLOVER_HOUR = 17;
 
+    function datePartsFromKey(value) {
+      const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return null;
+
+      return {
+        year: Number(match[1]),
+        month: Number(match[2]),
+        day: Number(match[3])
+      };
+    }
+
+    function timePartsFromText(value) {
+      const match = String(value || "00:00").match(/^(\d{1,2}):(\d{2})/);
+
+      return {
+        hour: match ? Number(match[1]) : 0,
+        minute: match ? Number(match[2]) : 0
+      };
+    }
+
+    function keyFromParts(parts) {
+      return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+    }
+
+    function timeFromParts(parts) {
+      return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+    }
+
+    function zonedPartsFromUtc(timestamp, timeZone) {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      }).formatToParts(new Date(timestamp));
+
+      const out = {};
+
+      parts.forEach(part => {
+        if (part.type !== "literal") out[part.type] = Number(part.value);
+      });
+
+      return {
+        year: out.year,
+        month: out.month,
+        day: out.day,
+        hour: out.hour,
+        minute: out.minute,
+        second: out.second || 0
+      };
+    }
+
+    /*
+      将“某个指定时区里的本地 date + time”稳定地转换为 UTC。
+      不使用 new Date("YYYY-MM-DDTHH:mm")，避免依赖电脑系统时区。
+      迭代修正可自动覆盖 Chicago 夏令时 / 冬令时。
+    */
+    function zonedLocalDateTimeToUtcMs(dateText, timeText, timeZone) {
+      const date = datePartsFromKey(normalizeDateValue(dateText));
+      if (!date) return NaN;
+
+      const time = timePartsFromText(timeText);
+      const wantedUtcLike = Date.UTC(
+        date.year,
+        date.month - 1,
+        date.day,
+        time.hour,
+        time.minute,
+        0
+      );
+
+      let guess = wantedUtcLike;
+
+      for (let i = 0; i < 4; i++) {
+        const actual = zonedPartsFromUtc(guess, timeZone);
+
+        const actualUtcLike = Date.UTC(
+          actual.year,
+          actual.month - 1,
+          actual.day,
+          actual.hour,
+          actual.minute,
+          actual.second || 0
+        );
+
+        const diff = wantedUtcLike - actualUtcLike;
+
+        if (Math.abs(diff) < 1000) break;
+        guess += diff;
+      }
+
+      return guess;
+    }
+
+    function addCalendarDays(dateText, days) {
+      const date = datePartsFromKey(normalizeDateValue(dateText));
+      if (!date) return "";
+
+      return new Date(
+        Date.UTC(date.year, date.month - 1, date.day + days)
+      ).toISOString().slice(0, 10);
+    }
+
+    /*
+      CME 交易日切换规则：
+      Chicago 当地时间 >= 17:00，归入下一 CME Trading Day。
+
+      示例：
+      北京周六 00:30
+      -> Chicago 周五 10:30/11:30
+      -> CME Trading Day = 周五
+
+      北京周一 07:30
+      -> Chicago 周日 17:30/18:30
+      -> CME Trading Day = 周一
+    */
+    function cmeTradingDateFromUtcMs(timestamp) {
+      const chicago = zonedPartsFromUtc(timestamp, CME_TIME_ZONE);
+      const chicagoDate = keyFromParts(chicago);
+
+      return chicago.hour >= CME_SESSION_ROLLOVER_HOUR
+        ? addCalendarDays(chicagoDate, 1)
+        : chicagoDate;
+    }
+
+    function cmeTradingDateFromBeijing(dateText, timeText) {
+      const utcMs = zonedLocalDateTimeToUtcMs(
+        normalizeDateValue(dateText),
+        timeText || "00:00",
+        DISPLAY_TIME_ZONE
+      );
+
+      return Number.isFinite(utcMs)
+        ? cmeTradingDateFromUtcMs(utcMs)
+        : normalizeDateValue(dateText);
+    }
+
+    /*
+      ATAS 原始 Chicago 日期 + 时间
+      -> 北京显示日期 / 北京显示时间 / CME交易日
+    */
+    function atasChicagoToBeijing(dateText, timeText) {
+      const utcMs = zonedLocalDateTimeToUtcMs(
+        normalizeDateValue(dateText),
+        timeText || "00:00",
+        CME_TIME_ZONE
+      );
+
+      if (!Number.isFinite(utcMs)) {
+        return {
+          beijingDate: normalizeDateValue(dateText),
+          beijingTime: String(timeText || "").slice(0, 5),
+          cmeTradingDate: normalizeDateValue(dateText)
+        };
+      }
+
+      const beijing = zonedPartsFromUtc(utcMs, DISPLAY_TIME_ZONE);
+
+      return {
+        beijingDate: keyFromParts(beijing),
+        beijingTime: timeFromParts(beijing),
+        cmeTradingDate: cmeTradingDateFromUtcMs(utcMs)
+      };
+    }
+
+    function tradeCmeTradingDate(trade) {
+      return cmeTradingDateFromBeijing(
+        normalizeDateValue(trade?.date),
+        trade?.entryTime || "00:00"
+      );
+    }
+
+    /*
+      K 线行格式：
+      [北京时间, open, high, low, close, 北京日期, CME交易日]
+
+      兼容旧格式：
+      [原始时间, open, high, low, close, ATAS Chicago 日期]
+      旧数据在读取时即时换算，无需先删除或重新导入。
+    */
+    function candleBeijingDate(candle) {
+      if (candle?.[6]) return normalizeDateValue(candle[5] || "");
+      return atasChicagoToBeijing(candle?.[5] || "", candle?.[0] || "00:00").beijingDate;
+    }
+
+    function candleCmeTradingDate(candle, fallbackDay = "") {
+      if (candle?.[6]) return normalizeDateValue(candle[6] || fallbackDay || "");
+      return atasChicagoToBeijing(candle?.[5] || fallbackDay || "", candle?.[0] || "00:00").cmeTradingDate;
+    }
     function parseKlineMinutes(time) {
       const m = String(time || "").match(/^(\d{1,2}):(\d{2})/);
       return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
@@ -3799,31 +4000,23 @@
       return Boolean(d) && new Date(Date.UTC(d.y, d.m - 1, d.d)).getUTCDay() === 6;
     }
 
-    // 周六凌晨仍可能属于上一交易日的延续：保留周六日期显示，必要时复用周五 K 线。
     function klineSourceDayForDisplay(day) {
-      if (Array.isArray(klineStore[day]) && klineStore[day].length) return day;
-      const friday = isSaturday(day) ? previousCalendarDay(day) : "";
-      return friday && Array.isArray(klineStore[friday]) && klineStore[friday].length ? friday : day;
+      const directRows = Array.isArray(klineStore[day]) ? klineStore[day].filter(row => candleBeijingDate(row) === day) : [];
+      if (directRows.length) return day;
+      for (const [storedDay, candles] of Object.entries(klineStore)) {
+        if (Array.isArray(candles) && candles.some(row => candleBeijingDate(row) === day)) return storedDay;
+      }
+      return day;
     }
 
     function klineRowsForDay(day) {
       const sourceDay = klineSourceDayForDisplay(day);
       const cacheKey = `${day}|${sourceDay}`;
       if (klineDayRowsCache.has(cacheKey)) return {sourceDay, rows:klineDayRowsCache.get(cacheKey)};
-      let rawRows = Array.isArray(klineStore[sourceDay]) ? klineStore[sourceDay] : [];
-      // 兼容旧版按交易所日期保存的数据：只在当前日期没有直连数据时扫描一次。
-      if (!rawRows.length) {
-        for (const [storedDay, candles] of Object.entries(klineStore)) {
-          if (!Array.isArray(candles)) continue;
-          const matches = candles.filter(row => normalizeDateValue(row?.[5] || storedDay) === day);
-          if (matches.length) { rawRows = matches; break; }
-        }
-      }
-      const rowsWithOwnDate = rawRows.filter(row => row?.[5] && normalizeDateValue(row[5]) === day);
-      if (rowsWithOwnDate.length) rawRows = rowsWithOwnDate;
+      const rawRows = Array.isArray(klineStore[sourceDay]) ? klineStore[sourceDay] : [];
       const rows = rawRows
-        .filter(row => Array.isArray(row) && row.length >= 5)
-        .map(row => [row[0], row[1], row[2], row[3], row[4], day])
+        .filter(row => Array.isArray(row) && row.length >= 5 && candleBeijingDate(row) === day)
+        .map(row => [row[0], row[1], row[2], row[3], row[4], candleBeijingDate(row), candleCmeTradingDate(row, sourceDay)])
         .sort((a, b) => parseKlineMinutes(a[0]) - parseKlineMinutes(b[0]));
       klineDayRowsCache.set(cacheKey, rows);
       return {sourceDay, rows};
@@ -3862,6 +4055,17 @@
       }
       klineViewport.start = Math.max(0, Math.min(n - 1, klineViewport.start));
       klineViewport.end = Math.max(klineViewport.start + 1, Math.min(n, klineViewport.end));
+    }
+
+    function klineMarkerPrice(fillPrice, candle) {
+      const close = Number(candle?.[4]);
+      const high = Number(candle?.[2]);
+      const low = Number(candle?.[3]);
+      const fill = Number(fillPrice);
+      if (!Number.isFinite(fill) || String(fillPrice ?? "").trim() === "") return close;
+      if (Number.isFinite(high) && fill > high) return high;
+      if (Number.isFinite(low) && fill < low) return low;
+      return fill;
     }
 
     function drawKline() {
@@ -3929,8 +4133,9 @@
         let hi = Math.max(...visible.map(b => b[2]));
         tradeMarkers.forEach(({t, entryIndex, exitIndex}) => {
           [[entryIndex, t.entry], [exitIndex, t.exit]].forEach(([idx, v]) => {
-            const n = Number(v);
-            if (idx >= start && idx < end && isFinite(n) && n) { lo = Math.min(lo, n); hi = Math.max(hi, n); }
+            if (idx < start || idx >= end) return;
+            const markerPrice = klineMarkerPrice(v, candles[idx]);
+            if (Number.isFinite(markerPrice)) { lo = Math.min(lo, markerPrice); hi = Math.max(hi, markerPrice); }
           });
         });
         const span = (hi - lo) || 1; lo -= span * 0.04; hi += span * 0.04;
@@ -3966,16 +4171,17 @@
         });
         // trade overlay
         tradeMarkers.forEach(({t, order, entryIndex, exitIndex}) => {
-          const entry = Number(t.entry); if (!isFinite(entry) || !entry) return;
           const ei = entryIndex;
           if (ei < start || ei >= end) return;
+          const entry = klineMarkerPrice(t.entry, candles[ei]);
+          if (!Number.isFinite(entry)) return;
           const ex = mapX(ei - start), ey = mapY(entry);
           const net = toNum(t.netPnl);
           const lc = net === null ? "#6d746f" : net >= 0 ? "#148a5b" : "#bd3b3b";
-          const exit = Number(t.exit);
-          if (isFinite(exit) && exit) {
-            const xi = exitIndex;
-            const xx = mapX(Math.max(0, Math.min(n - 1, xi - start))), xy = mapY(exit);
+          const xi = exitIndex;
+          if (xi >= start && xi < end) {
+            const exit = klineMarkerPrice(t.exit, candles[xi]);
+            const xx = mapX(xi - start), xy = mapY(exit);
             ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = lc; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(xx, xy); ctx.stroke(); ctx.restore();
             drawArrowMarker(xx, xy, t.side === "Short" ? "up" : "down", lc, 10);
@@ -4127,9 +4333,18 @@
         const [mm, dd] = aa <= 12 && bb > 12 ? [a, b] : [b, a];
         const o = parseFloat(p[1]), h = parseFloat(p[2]), l = parseFloat(p[3]), cl = parseFloat(p[4]);
         if (![o, h, l, cl].every(Number.isFinite)) return; // 跳过表头/坏行
-        const beijingDay = normalizeDateValue(`${y}-${mm}-${dd}`);
-        const key = beijingDay;
-        (out[key] = out[key] || []).push([timePart, round2(o), round2(h), round2(l), round2(cl), beijingDay]);
+        const chicagoDay = normalizeDateValue(`${y}-${mm}-${dd}`);
+        const converted = atasChicagoToBeijing(chicagoDay, timePart);
+        const key = converted.cmeTradingDate;
+        (out[key] = out[key] || []).push([
+          converted.beijingTime,
+          round2(o),
+          round2(h),
+          round2(l),
+          round2(cl),
+          converted.beijingDate,
+          converted.cmeTradingDate
+        ]);
       });
       Object.values(out).forEach(arr => arr.sort((a, b) => beijingDateTimeMinutes(a[5], a[0]) - beijingDateTimeMinutes(b[5], b[0])));
       return out;
