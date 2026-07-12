@@ -3646,11 +3646,13 @@
 
     function renderKline() {
       const filtered = filteredTrades();
+      const cmeKlines = normalizedKlineStoreByCmeDay();
       const tradeCounts = new Map();
       filtered.forEach(t => {
-        if (t.date) tradeCounts.set(t.date, (tradeCounts.get(t.date) || 0) + 1);
+        const day = cmeTradeDay(t);
+        if (day) tradeCounts.set(day, (tradeCounts.get(day) || 0) + 1);
       });
-      const storedDays = Object.keys(klineStore).filter(day => Array.isArray(klineStore[day]) && klineStore[day].length).sort();
+      const storedDays = Object.keys(cmeKlines).filter(day => Array.isArray(cmeKlines[day]) && cmeKlines[day].length).sort();
       const days = storedDays.filter(day => tradeCounts.has(day));
       const months = [...new Set(days.map(day => day.slice(0, 7)))].sort();
       document.querySelectorAll("[data-ktf]").forEach(b => {
@@ -3728,6 +3730,62 @@
       return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
     }
 
+    function parseDateParts(dateText) {
+      const m = String(dateText || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? {y:Number(m[1]), m:Number(m[2]), d:Number(m[3])} : null;
+    }
+
+    function parseTimeParts(timeText) {
+      const m = String(timeText || "00:00").match(/^(\d{1,2}):(\d{2})/);
+      return m ? {h:Number(m[1]), min:Number(m[2])} : {h:0, min:0};
+    }
+
+    function formatDateInZone(date, timeZone) {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year:"numeric",
+        month:"2-digit",
+        day:"2-digit"
+      }).formatToParts(date).map(p => [p.type, p.value]));
+      return `${parts.year}-${parts.month}-${parts.day}`;
+    }
+
+    function cmeDayFromBeijing(dateText, timeText = "00:00") {
+      const d = parseDateParts(dateText);
+      if (!d) return normalizeDateValue(dateText);
+      const t = parseTimeParts(timeText);
+      const utc = new Date(Date.UTC(d.y, d.m - 1, d.d, t.h - 8, t.min, 0));
+      return formatDateInZone(utc, "America/Chicago");
+    }
+
+    function cmeTradeDay(t = {}) {
+      return cmeDayFromBeijing(t.date, t.entryTime || t.exitTime || "00:00");
+    }
+
+    function beijingDateTimeMinutes(dateText, timeText) {
+      const d = parseDateParts(dateText);
+      const t = parseTimeParts(timeText);
+      if (!d) return parseKlineMinutes(timeText);
+      return Math.floor(Date.UTC(d.y, d.m - 1, d.d, t.h, t.min, 0) / 60000);
+    }
+
+    function normalizedKlineStoreByCmeDay() {
+      const out = {};
+      Object.entries(klineStore || {}).forEach(([storedDay, candles]) => {
+        if (!Array.isArray(candles)) return;
+        candles.forEach(row => {
+          if (!row || row.length < 5) return;
+          const beijingDay = normalizeDateValue(row[5] || storedDay);
+          const time = row[0];
+          const cmeDay = cmeDayFromBeijing(beijingDay, time);
+          const next = [time, row[1], row[2], row[3], row[4], beijingDay];
+          (out[cmeDay] = out[cmeDay] || []).push(next);
+        });
+      });
+      Object.values(out).forEach(arr => arr.sort((a, b) => beijingDateTimeMinutes(a[5], a[0]) - beijingDateTimeMinutes(b[5], b[0])));
+      return out;
+    }
+
     function formatKlineMinutes(total) {
       const h = Math.floor(total / 60) % 24, m = total % 60;
       return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -3738,9 +3796,10 @@
       const buckets = new Map();
       candles.forEach(b => {
         if (!b || b.length < 5) return;
-        const bucket = Math.floor(parseKlineMinutes(b[0]) / minutes) * minutes;
+        const sourceDay = b[5] || klineDay;
+        const bucket = Math.floor(beijingDateTimeMinutes(sourceDay, b[0]) / minutes) * minutes;
         const row = buckets.get(bucket);
-        if (!row) buckets.set(bucket, [formatKlineMinutes(bucket), b[1], b[2], b[3], b[4]]);
+        if (!row) buckets.set(bucket, [b[0], b[1], b[2], b[3], b[4], sourceDay]);
         else {
           row[2] = Math.max(row[2], b[2]);
           row[3] = Math.min(row[3], b[3]);
@@ -3764,21 +3823,26 @@
 
     function drawKline() {
       const c = $("klineChart"), ctx = c.getContext("2d");
-      const sourceCandles = klineStore[klineDay] || [];
+      const cmeKlines = normalizedKlineStoreByCmeDay();
+      const sourceCandles = cmeKlines[klineDay] || [];
       const candles = aggregateKlineCandles(sourceCandles, klineTimeframe);
       ensureKlineViewport(candles);
-      const dayTrades = filteredTrades().filter(t => t.date === klineDay).map(derivedTrade)
-        .sort((a, b) => String(a.entryTime).localeCompare(String(b.entryTime)));
-      const rawStep = sourceCandles.length > 1 ? Math.max(1, parseKlineMinutes(sourceCandles[1][0]) - parseKlineMinutes(sourceCandles[0][0])) : klineTimeframe;
+      const dayTrades = filteredTrades().filter(t => cmeTradeDay(t) === klineDay).map(derivedTrade)
+        .sort((a, b) => beijingDateTimeMinutes(a.date, a.entryTime) - beijingDateTimeMinutes(b.date, b.entryTime));
+      const rawStep = sourceCandles.length > 1 ? Math.max(1, beijingDateTimeMinutes(sourceCandles[1][5], sourceCandles[1][0]) - beijingDateTimeMinutes(sourceCandles[0][5], sourceCandles[0][0])) : klineTimeframe;
       const tfNote = klineTimeframe === 1 && rawStep > 1 ? `1m视图 · 源数据约${rawStep}m` : `${klineTimeframe}m`;
       const visibleCount = Math.max(0, klineViewport.end - klineViewport.start);
-      $("klineMeta").textContent = candles.length ? `${klineDay} · ${visibleCount}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记` : "";
+      $("klineMeta").textContent = candles.length ? `CME ${klineDay} · 北京时间显示 · ${visibleCount}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记` : "";
       renderKlineTradeList(dayTrades);
       const padL = 48, padR = 16, padT = 16, padB = 28;
-      const idxForTime = tm => {
-        if (!tm) return -1;
+      const idxForTradeTime = (dateText, tm) => {
+        if (!dateText || !tm) return -1;
+        const target = beijingDateTimeMinutes(dateText, tm);
         let idx = -1;
-        for (let i = 0; i < candles.length; i++) { if (candles[i][0] <= tm) idx = i; else break; }
+        for (let i = 0; i < candles.length; i++) {
+          if (beijingDateTimeMinutes(candles[i][5], candles[i][0]) <= target) idx = i;
+          else break;
+        }
         return idx < 0 ? 0 : idx;
       };
       const drawArrowMarker = (x, y, direction, color, size = 10) => {
@@ -3814,7 +3878,7 @@
         let lo = Math.min(...visible.map(b => b[3]));
         let hi = Math.max(...visible.map(b => b[2]));
         dayTrades.forEach(t => {
-          const ei = idxForTime(t.entryTime), xi = idxForTime(t.exitTime);
+          const ei = idxForTradeTime(t.date, t.entryTime), xi = idxForTradeTime(t.date, t.exitTime);
           [[ei, t.entry], [xi, t.exit]].forEach(([idx, v]) => {
             const n = Number(v);
             if (idx >= start && idx < end && isFinite(n) && n) { lo = Math.min(lo, n); hi = Math.max(hi, n); }
@@ -3854,14 +3918,14 @@
         // trade overlay
         dayTrades.forEach((t, oi) => {
           const entry = Number(t.entry); if (!isFinite(entry) || !entry) return;
-          const ei = idxForTime(t.entryTime);
+          const ei = idxForTradeTime(t.date, t.entryTime);
           if (ei < start || ei >= end) return;
           const ex = mapX(ei - start), ey = mapY(entry);
           const net = toNum(t.netPnl);
           const lc = net === null ? "#6d746f" : net >= 0 ? "#148a5b" : "#bd3b3b";
           const exit = Number(t.exit);
           if (isFinite(exit) && exit) {
-            const xi = idxForTime(t.exitTime);
+            const xi = idxForTradeTime(t.date, t.exitTime);
             const xx = mapX(Math.max(0, Math.min(n - 1, xi - start))), xy = mapY(exit);
             ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = lc; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(xx, xy); ctx.stroke(); ctx.restore();
@@ -3880,19 +3944,19 @@
           ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
         });
         ctx.fillStyle = "#9a958a"; ctx.font = "12px Inter, sans-serif"; ctx.textAlign = "right";
-        ctx.fillText(`${visible[0][0]} - ${visible[n - 1][0]}`, c.width - padR, 18);
+        ctx.fillText(`${visible[0][5]} ${visible[0][0]} - ${visible[n - 1][5]} ${visible[n - 1][0]} 北京`, c.width - padR, 18);
         ctx.textAlign = "left";
         if (hoverIndex >= 0 && hoverIndex < n) {
           const b = visible[hoverIndex], x = mapX(hoverIndex);
           drawHoverGuide(ctx, c, x, c.height - padB, mapY(b[4]), padL);
-          drawTooltip(ctx, c, x, mapY(b[2]), [`${klineDay} ${b[0]}`, `开 ${b[1].toFixed(2)}  高 ${b[2].toFixed(2)}`, `低 ${b[3].toFixed(2)}  收 ${b[4].toFixed(2)}`]);
+          drawTooltip(ctx, c, x, mapY(b[2]), [`${b[5] || klineDay} ${b[0]} 北京时间`, `CME ${klineDay}`, `开 ${b[1].toFixed(2)}  高 ${b[2].toFixed(2)}`, `低 ${b[3].toFixed(2)}  收 ${b[4].toFixed(2)}`]);
         }
       };
       paint();
       let dragState = null;
       const updateKlineMeta = () => {
         const count = Math.max(0, klineViewport.end - klineViewport.start);
-        $("klineMeta").textContent = `${klineDay} · ${count}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记`;
+        $("klineMeta").textContent = `CME ${klineDay} · 北京时间显示 · ${count}/${candles.length} 根 (${tfNote}) · ${dayTrades.length} 笔标记`;
       };
       const panToStart = start => {
         const count = Math.max(1, klineViewport.end - klineViewport.start);
@@ -3957,7 +4021,7 @@
     }
 
     function renderKlineTradeList(dayTrades) {
-      $("klineTradeMeta").textContent = `${klineDay} · ${dayTrades.length} 笔`;
+      $("klineTradeMeta").textContent = `CME ${klineDay} · ${dayTrades.length} 笔 · 时间按北京时间`;
       if (!dayTrades.length) { $("klineTradeList").innerHTML = `<div class="kt-empty">这一天没有交易记录。在「交易日志」里录入当天的交易,这里会按顺序显示,并自动画到上方 K 线上。</div>`; return; }
       const fld = (label, val, asKeyword = false) => `<div class="kt-field"><b>${label}</b>${val ? (asKeyword ? keywordTextPill(val) : escapeHtml(val)) : '<span class="empty">—</span>'}</div>`;
       $("klineTradeList").innerHTML = dayTrades.map((t, i) => {
@@ -4004,10 +4068,11 @@
         const [mm, dd] = aa <= 12 && bb > 12 ? [a, b] : [b, a];
         const o = parseFloat(p[1]), h = parseFloat(p[2]), l = parseFloat(p[3]), cl = parseFloat(p[4]);
         if (![o, h, l, cl].every(Number.isFinite)) return; // 跳过表头/坏行
-        const key = normalizeDateValue(`${y}-${mm}-${dd}`);
-        (out[key] = out[key] || []).push([timePart, round2(o), round2(h), round2(l), round2(cl)]);
+        const beijingDay = normalizeDateValue(`${y}-${mm}-${dd}`);
+        const key = cmeDayFromBeijing(beijingDay, timePart);
+        (out[key] = out[key] || []).push([timePart, round2(o), round2(h), round2(l), round2(cl), beijingDay]);
       });
-      Object.values(out).forEach(arr => arr.sort((a, b) => a[0].localeCompare(b[0])));
+      Object.values(out).forEach(arr => arr.sort((a, b) => beijingDateTimeMinutes(a[5], a[0]) - beijingDateTimeMinutes(b[5], b[0])));
       return out;
     }
 
@@ -5079,7 +5144,7 @@
         klineStore = Object.assign({}, KLINE_DATA, klineStore, parsed);
         await saveKlineLocalOnly(parsed);
         if (currentUser && cloudReady) await saveCloudKlineData();
-        const tradeDays = new Set(trades.map(t => t.date).filter(Boolean));
+        const tradeDays = new Set(trades.map(t => cmeTradeDay(t)).filter(Boolean));
         const matchedDays = dayKeys.filter(day => tradeDays.has(day));
         klineDay = matchedDays[matchedDays.length - 1] || "";
         klineMonth = klineDay ? klineDay.slice(0, 7) : "";
