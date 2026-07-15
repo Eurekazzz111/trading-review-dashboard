@@ -1545,7 +1545,12 @@
               ＋ 导入当日K线 (ATAS CSV)
               <input type="file" id="klineImport" accept=".csv,text/csv" style="display:none;">
             </label>
-            <span class="small-note" id="klineImportNote">支持 ATAS 导出格式：年-日-月;开;高;低;收（分号分隔，可含多天）</span>
+            <label class="small-note" for="klineSourceTimezone">CSV 时间</label>
+            <select id="klineSourceTimezone" aria-label="ATAS CSV 时间所在时区" style="height:34px;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:0 9px;">
+              <option value="beijing">北京时间（与 ATAS 图一致）</option>
+              <option value="chicago">CME / Chicago 时间</option>
+            </select>
+            <span class="small-note" id="klineImportNote">按表头识别日期、时间、开、高、低、收；也兼容旧版无表头格式</span>
           </div>
           <div class="kline-empty-state" id="klineEmptyState" hidden></div>
           <div class="kline-data" id="klineDataContent">
@@ -1890,6 +1895,7 @@
 
     const KLINE_DATA = {};
     const KLINE_KEY = "trading-review-kline-v1";
+    const KLINE_SOURCE_TIMEZONE_KEY = "trading-review-kline-source-timezone";
     const KLINE_DB_NAME = "trading-review-kline-db";
     const KLINE_DB_STORE = "days";
     // K 线按日期按需取用；绝不在打开 K 线页时整理全部历史蜡烛。
@@ -3762,7 +3768,7 @@
     /*
       时区规则：
       - 手工交易记录 date / entryTime / exitTime：北京时间 Asia/Shanghai
-      - ATAS K线导出时间：CME Chicago 时间 America/Chicago
+      - ATAS K线导出时间：由导入时的“CSV 时间”选项决定
       - K线与交易按 CME Trading Day 匹配
       - CME Trading Day 在 Chicago 当地时间 17:00 切换到下一个交易日
     */
@@ -3936,6 +3942,17 @@
         beijingDate: keyFromParts(beijing),
         beijingTime: timeFromParts(beijing),
         cmeTradingDate: cmeTradingDateFromUtcMs(utcMs)
+      };
+    }
+
+    function atasSourceToBeijing(dateText, timeText, sourceTimezone = "beijing") {
+      if (sourceTimezone === "chicago") return atasChicagoToBeijing(dateText, timeText);
+      const beijingDate = normalizeDateValue(dateText);
+      const beijingTime = timeFromParts(timePartsFromText(timeText));
+      return {
+        beijingDate,
+        beijingTime,
+        cmeTradingDate: cmeTradingDateFromBeijing(beijingDate, beijingTime)
       };
     }
 
@@ -4145,13 +4162,14 @@
         const bw = Math.max(2, step * 0.6);
         const mapX = i => padL + i * step + step / 2;
         const mapY = v => padT + (hi - v) / (hi - lo) * (c.height - padT - padB);
+        const priceDigits = span < 10 ? 2 : span < 100 ? 1 : 0;
         // grid + y labels
         ctx.font = "12px Inter, sans-serif";
         for (let g = 0; g <= 4; g++) {
           const v = lo + (hi - lo) * g / 4, y = mapY(v);
           ctx.strokeStyle = "#ece7dd"; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(c.width - padR, y); ctx.stroke();
-          ctx.fillStyle = "#6d746f"; ctx.fillText(v.toFixed(0), 6, y + 4);
+          ctx.fillStyle = "#6d746f"; ctx.fillText(v.toFixed(priceDigits), 6, y + 4);
         }
         // x time labels
         const ticks = 8;
@@ -4318,35 +4336,165 @@
       }));
     }
 
-    function round2(n) { return Math.round(n * 100) / 100; }
-    function parseAtasCsv(text) {
-      const out = {};
-      String(text).split(/\r?\n/).forEach(line => {
-        line = line.trim(); if (!line) return;
-        let p = line.split(";"); if (p.length < 5) p = line.split(",");
-        if (p.length < 5) return;
-        const dt = p[0].trim().split(/\s+/);
-        const seg = dt[0].split("-"); if (seg.length !== 3) return;
-        const timePart = (dt[1] || "00:00:00").slice(0, 5);
-        const [y, a, b] = seg; // ATAS 常见为 年-日-月，也兼容 年-月-日
-        const aa = Number(a), bb = Number(b);
-        const [mm, dd] = aa <= 12 && bb > 12 ? [a, b] : [b, a];
-        const o = parseFloat(p[1]), h = parseFloat(p[2]), l = parseFloat(p[3]), cl = parseFloat(p[4]);
-        if (![o, h, l, cl].every(Number.isFinite)) return; // 跳过表头/坏行
-        const chicagoDay = normalizeDateValue(`${y}-${mm}-${dd}`);
-        const converted = atasChicagoToBeijing(chicagoDay, timePart);
-        const key = converted.cmeTradingDate;
-        (out[key] = out[key] || []).push([
-          converted.beijingTime,
-          round2(o),
-          round2(h),
-          round2(l),
-          round2(cl),
-          converted.beijingDate,
-          converted.cmeTradingDate
-        ]);
+    function splitKlineCsvLine(line, delimiter) {
+      const cells = [];
+      let value = "", quoted = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (quoted && line[i + 1] === '"') { value += '"'; i++; }
+          else quoted = !quoted;
+        } else if (ch === delimiter && !quoted) {
+          cells.push(value.trim()); value = "";
+        } else value += ch;
+      }
+      cells.push(value.trim());
+      return cells;
+    }
+
+    function detectKlineDelimiter(lines) {
+      const sample = lines.slice(0, 8).join("\n");
+      return [";", "\t", ","].map(delimiter => ({
+        delimiter,
+        count: [...sample].filter(ch => ch === delimiter).length
+      })).sort((a, b) => b.count - a.count)[0]?.delimiter || ";";
+    }
+
+    function klineHeaderKey(value) {
+      return String(value || "").replace(/^\uFEFF/, "").trim().toLowerCase()
+        .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "");
+    }
+
+    const KLINE_HEADER_ALIASES = {
+      datetime: ["datetime", "dateandtime", "timestamp", "bardatetime", "日期时间", "时间戳"],
+      date: ["date", "day", "bardate", "日期", "交易日期"],
+      time: ["time", "bartime", "时间", "时刻"],
+      open: ["open", "openprice", "开", "开盘", "开盘价"],
+      high: ["high", "highprice", "高", "最高", "最高价"],
+      low: ["low", "lowprice", "低", "最低", "最低价"],
+      close: ["close", "closeprice", "收", "收盘", "收盘价"]
+    };
+
+    function klineColumnIndex(header, name) {
+      const aliases = KLINE_HEADER_ALIASES[name];
+      return header.findIndex(cell => aliases.includes(klineHeaderKey(cell)));
+    }
+
+    function parseKlineNumber(value) {
+      let text = String(value ?? "").trim().replace(/\s/g, "");
+      if (!text) return NaN;
+      const comma = text.lastIndexOf(","), dot = text.lastIndexOf(".");
+      if (comma >= 0 && dot >= 0) {
+        text = comma > dot ? text.replace(/\./g, "").replace(",", ".") : text.replace(/,/g, "");
+      } else if (comma >= 0) text = text.replace(",", ".");
+      return Number(text);
+    }
+
+    function inferKlineYearFirstOrder(rows, dateIndex, dateTimeIndex) {
+      for (const row of rows) {
+        const raw = String(row[dateTimeIndex >= 0 ? dateTimeIndex : dateIndex] || "").trim();
+        const match = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+        if (!match) continue;
+        if (Number(match[2]) > 12) return "ydm";
+        if (Number(match[3]) > 12) return "ymd";
+      }
+      return "ymd";
+    }
+
+    function parseKlineDate(value, yearFirstOrder = "ymd") {
+      const text = String(value || "").trim().replace(/^\uFEFF/, "");
+      let match = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+      let year, month, day;
+      if (match) {
+        year = Number(match[1]);
+        if (yearFirstOrder === "ydm") { day = Number(match[2]); month = Number(match[3]); }
+        else { month = Number(match[2]); day = Number(match[3]); }
+      } else {
+        match = text.match(/^(\d{1,2})([-/.])(\d{1,2})\2(\d{4})/);
+        if (match) {
+          year = Number(match[4]);
+          if (match[2] === "/" && Number(match[1]) <= 12) { month = Number(match[1]); day = Number(match[3]); }
+          else { day = Number(match[1]); month = Number(match[3]); }
+        } else {
+          match = text.match(/^(\d{4})(\d{2})(\d{2})/);
+          if (!match) return "";
+          year = Number(match[1]); month = Number(match[2]); day = Number(match[3]);
+        }
+      }
+      const check = new Date(Date.UTC(year, month - 1, day));
+      if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return "";
+      return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+
+    function parseKlineTime(value) {
+      const match = String(value || "").match(/(?:^|[T\s])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?/);
+      if (!match) return "";
+      const hour = Number(match[1]), minute = Number(match[2]);
+      if (hour > 23 || minute > 59) return "";
+      return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
+
+    function validKlineOhlc(open, high, low, close) {
+      if (![open, high, low, close].every(Number.isFinite)) return false;
+      const epsilon = Math.max(1, Math.abs(high), Math.abs(low)) * 1e-10;
+      return high + epsilon >= Math.max(open, close, low) && low - epsilon <= Math.min(open, close, high);
+    }
+
+    function parseAtasCsv(text, options = {}) {
+      const sourceTimezone = options.sourceTimezone === "chicago" ? "chicago" : "beijing";
+      const lines = String(text || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const delimiter = detectKlineDelimiter(lines);
+      const rows = lines.map(line => splitKlineCsvLine(line, delimiter));
+      const headerIndex = rows.findIndex(row => {
+        const keys = row.map(klineHeaderKey);
+        const priceColumns = ["open", "high", "low", "close"].filter(name => KLINE_HEADER_ALIASES[name].some(alias => keys.includes(alias))).length;
+        return priceColumns === 4 && [...KLINE_HEADER_ALIASES.date, ...KLINE_HEADER_ALIASES.datetime].some(alias => keys.includes(alias));
       });
-      Object.values(out).forEach(arr => arr.sort((a, b) => beijingDateTimeMinutes(a[5], a[0]) - beijingDateTimeMinutes(b[5], b[0])));
+      const header = headerIndex >= 0 ? rows[headerIndex] : [];
+      const sample = rows[headerIndex >= 0 ? headerIndex + 1 : 0] || [];
+      let dateTimeIndex = headerIndex >= 0 ? klineColumnIndex(header, "datetime") : 0;
+      let dateIndex = headerIndex >= 0 ? klineColumnIndex(header, "date") : 0;
+      let timeIndex = headerIndex >= 0 ? klineColumnIndex(header, "time") : -1;
+      let openIndex = headerIndex >= 0 ? klineColumnIndex(header, "open") : 1;
+      let highIndex = headerIndex >= 0 ? klineColumnIndex(header, "high") : 2;
+      let lowIndex = headerIndex >= 0 ? klineColumnIndex(header, "low") : 3;
+      let closeIndex = headerIndex >= 0 ? klineColumnIndex(header, "close") : 4;
+      if (headerIndex < 0) {
+        if (parseKlineTime(sample[1])) {
+          dateTimeIndex = -1; dateIndex = 0; timeIndex = 1;
+          openIndex = 2; highIndex = 3; lowIndex = 4; closeIndex = 5;
+        } else {
+          dateTimeIndex = 0; dateIndex = -1; timeIndex = -1;
+        }
+      } else if (dateTimeIndex >= 0) {
+        dateIndex = -1;
+      } else {
+        dateTimeIndex = -1;
+      }
+      const dataRows = rows.slice(headerIndex >= 0 ? headerIndex + 1 : 0);
+      const yearFirstOrder = inferKlineYearFirstOrder(dataRows, dateIndex, dateTimeIndex);
+      const outMaps = new Map();
+      const meta = {delimiter, headerFound:headerIndex >= 0, sourceTimezone, parsedRows:0, invalidRows:0, skippedRows:0};
+      dataRows.forEach(row => {
+        const dateSource = row[dateTimeIndex >= 0 ? dateTimeIndex : dateIndex];
+        const timeSource = dateTimeIndex >= 0 ? row[dateTimeIndex] : row[timeIndex];
+        const day = parseKlineDate(dateSource, yearFirstOrder);
+        const time = parseKlineTime(timeSource);
+        const open = parseKlineNumber(row[openIndex]), high = parseKlineNumber(row[highIndex]);
+        const low = parseKlineNumber(row[lowIndex]), close = parseKlineNumber(row[closeIndex]);
+        if (!day || !time) { meta.skippedRows++; return; }
+        if (!validKlineOhlc(open, high, low, close)) { meta.invalidRows++; return; }
+        const converted = atasSourceToBeijing(day, time, sourceTimezone);
+        const candle = [converted.beijingTime, open, high, low, close, converted.beijingDate, converted.cmeTradingDate];
+        if (!outMaps.has(converted.cmeTradingDate)) outMaps.set(converted.cmeTradingDate, new Map());
+        outMaps.get(converted.cmeTradingDate).set(`${converted.beijingDate} ${converted.beijingTime}`, candle);
+        meta.parsedRows++;
+      });
+      const out = {};
+      outMaps.forEach((candles, day) => {
+        out[day] = [...candles.values()].sort((a, b) => beijingDateTimeMinutes(a[5], a[0]) - beijingDateTimeMinutes(b[5], b[0]));
+      });
+      Object.defineProperty(out, "_meta", {value:meta, enumerable:false});
       return out;
     }
 
@@ -5420,24 +5568,40 @@
     $("clearFilters").addEventListener("click", () => { ["fromDate","toDate","symbolFilter","sessionFilter","dayPartFilter","strategyFilter"].forEach(id => $(id).value = ""); $("recordTypeFilter").value = "live"; render(); });
     $("resetSample").addEventListener("click", async () => { trades = []; saveLocalOnly(); await clearCloudTrades(); render(); });
     $("klineResetZoom").addEventListener("click", () => { resetKlineViewport(); renderKline(); });
+    const klineSourceTimezone = $("klineSourceTimezone");
+    klineSourceTimezone.value = localStorage.getItem(KLINE_SOURCE_TIMEZONE_KEY) || "beijing";
+    klineSourceTimezone.addEventListener("change", () => {
+      localStorage.setItem(KLINE_SOURCE_TIMEZONE_KEY, klineSourceTimezone.value);
+      $("klineImportNote").textContent = klineSourceTimezone.value === "chicago"
+        ? "下一次导入会把 CSV 中的 CME / Chicago 时间换算为北京时间"
+        : "下一次导入会保持 CSV 中的北京时间，与 ATAS 图表时间一致";
+    });
     $("klineImport").addEventListener("change", async e => {
       const file = e.target.files[0]; if (!file) return;
       try {
         const text = await readCsvFileText(file);
-        const parsed = parseAtasCsv(text);
+        const parsed = parseAtasCsv(text, {sourceTimezone:klineSourceTimezone.value});
+        const importMeta = parsed._meta || {};
         const dayKeys = Object.keys(parsed).sort();
-        if (!dayKeys.length) { $("klineImportNote").textContent = "未解析到 K 线数据，请检查是否为 ATAS 导出格式。"; return; }
+        if (!dayKeys.length) {
+          const detail = importMeta.invalidRows ? `检测到 ${importMeta.invalidRows} 行 OHLC 不合法，已拒绝保存。` : "没有识别到日期、时间和 OHLC 数据。";
+          $("klineImportNote").textContent = `导入失败：${detail} 请检查 CSV 表头和时间选项。`;
+          return;
+        }
         klineStore = Object.assign({}, KLINE_DATA, klineStore, parsed);
         invalidateKlineCache();
         await saveKlineLocalOnly(parsed);
         if (currentUser && cloudReady) await saveCloudKlineData();
         const tradeDays = new Set(trades.map(t => normalizeDateValue(t.date)).filter(Boolean));
-        const matchedDays = dayKeys.filter(day => tradeDays.has(day));
+        const matchedDays = [...tradeDays].filter(day => klineRowsForDay(day).rows.length).sort();
         klineDay = matchedDays[matchedDays.length - 1] || "";
         klineMonth = klineDay ? klineDay.slice(0, 7) : "";
         resetKlineViewport();
         const range = dayKeys.length === 1 ? dayKeys[0] : `${dayKeys[0]} 至 ${dayKeys[dayKeys.length - 1]}`;
-        $("klineImportNote").textContent = `已导入 ${dayKeys.length} 天 K 线（${range}），其中 ${matchedDays.length} 个日期有交易并可显示。`;
+        const format = importMeta.headerFound ? "已按表头识别" : "已按兼容格式识别";
+        const timezone = importMeta.sourceTimezone === "chicago" ? "CME / Chicago → 北京" : "北京时间原样";
+        const skipped = (importMeta.invalidRows || importMeta.skippedRows) ? `；跳过 ${Number(importMeta.invalidRows || 0) + Number(importMeta.skippedRows || 0)} 行异常数据` : "";
+        $("klineImportNote").textContent = `${format} ${importMeta.parsedRows || 0} 根（${timezone}），保存 ${dayKeys.length} 个交易日（${range}），其中 ${matchedDays.length} 个日期有交易并可显示${skipped}。`;
         renderKline();
       } catch (err) {
         $("klineImportNote").textContent = "导入失败：" + err.message;
